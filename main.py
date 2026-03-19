@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -39,6 +40,7 @@ REQUIRE_GPU = os.getenv("REQUIRE_GPU", "1").strip().lower() not in {"0", "false"
 VIDEO_BATCH_SIZE = max(1, int(os.getenv("VIDEO_BATCH_SIZE", "32")))
 MAX_DYNAMIC_MOSAICS = max(1, int(os.getenv("MAX_DYNAMIC_MOSAICS", "24")))
 MOSAIC_SCALE_DIVISOR = max(1, int(os.getenv("MOSAIC_SCALE_DIVISOR", "8")))
+LLM_MAX_BATCH_REQUESTS = max(1, int(os.getenv("LLM_MAX_BATCH_REQUESTS", "4")))
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -127,6 +129,7 @@ def runtime_status() -> dict[str, str]:
         "precision": "fp16" if inference_half else "fp32",
         "policy": "gpu-only" if REQUIRE_GPU else "auto-fallback",
         "video_batch_size": str(VIDEO_BATCH_SIZE),
+        "llm_max_batch_requests": str(LLM_MAX_BATCH_REQUESTS),
     }
 
 
@@ -719,15 +722,19 @@ def summarize_mosaic_answers(first_mosaic: Image.Image | None, mosaic_answers: s
         raise RuntimeError("No mosaic answers available.")
 
     system_prompt = (
-        "You are summarizing per-mosaic findings from a video. "
+        "You are a cautious surveillance analyst summarizing per-mosaic findings from a video. "
+        "Prioritize potential public-safety and property-crime signals, including theft, arson, "
+        "vandalism, trespassing, assault, and weapon-like behavior. "
         "The provided image is only the first temporal mosaic and may miss information "
-        "that appears in the mosaic answers. Prefer the full mosaic answers when conflicts appear."
+        "that appears in the mosaic answers. Prefer the full mosaic answers when conflicts appear. "
+        "If confidence is low, state uncertainty briefly instead of inventing details."
     )
     user_prompt = (
         "Create one final understanding of the full video using ONLY:\n"
         "1) the first mosaic image\n"
         "2) the mosaic answers text below\n\n"
         f"Mosaic answers:\n{mosaic_answers}\n\n"
+        "Focus on suspicious behavior and threat-relevant context when present. "
         "Return only one short paragraph."
     )
     return query_llamacpp(first_mosaic, user_prompt, max_tokens=384, system_prompt=system_prompt)
@@ -773,7 +780,7 @@ def generate_threat_assessment(
         images.append(second_mosaic)
 
     system_prompt = (
-        "You are a video security analyst. Output only strict JSON with keys "
+        "You are a vigilant video security analyst. Output only strict JSON with keys "
         "`threat_score` (integer 0-100) and `assessment` (one short sentence)."
     )
     user_prompt = (
@@ -781,11 +788,14 @@ def generate_threat_assessment(
         f"- First mosaic understanding: {first_caption or 'N/A'}\n"
         f"- Second mosaic understanding: {second_caption or 'N/A'}\n"
         f"- Final video understanding: {final_summary or 'N/A'}\n\n"
+        "Explicitly check for indicators of theft/shoplifting, arson/fire-setting, vandalism/property damage, "
+        "trespassing, assault, and weapon-related threats.\n"
         "Scoring guide:\n"
-        "- 0 to 20: benign\n"
-        "- 21 to 50: suspicious but non-violent\n"
-        "- 51 to 80: likely dangerous behavior\n"
-        "- 81 to 100: immediate high-risk threat\n\n"
+        "- 0 to 20: clearly benign routine activity\n"
+        "- 21 to 50: suspicious behavior or possible pre-incident indicators\n"
+        "- 51 to 80: likely criminal or dangerous behavior (e.g., theft, vandalism, attempted arson)\n"
+        "- 81 to 100: active high-risk threat (e.g., confirmed arson attempt, violent assault, weapon threat)\n\n"
+        "When uncertain between two ranges, choose the higher range if suspicious indicators are present.\n"
         "Return strict JSON only."
     )
     raw = query_llamacpp_with_images(images, user_prompt, max_tokens=160, system_prompt=system_prompt)
@@ -797,6 +807,7 @@ def run_video_understanding(
     n: int,
     prompt: str,
     conf: float,
+    llm_max_batch_requests: int,
     progress_cb: callable | None = None,
 ) -> tuple[list[dict[str, str]], str, str, str, int | None, str | None]:
     n = max(1, int(n))
@@ -813,24 +824,39 @@ def run_video_understanding(
     if progress_cb is not None:
         progress_cb(55, "Built temporal staggered mosaics")
 
-    user_prompt = prompt.strip() or "Describe the overall action taking place in this video."
-    responses: list[str] = []
-    response_texts: list[str] = []
-    for i, mosaic in enumerate(mosaics, start=1):
+    user_prompt = (
+        prompt.strip()
+        or "Analyze this surveillance video for suspicious activity and potential threats, "
+        "including theft, arson, vandalism, trespassing, assault, and weapon-related behavior."
+    )
+    max_workers = max(1, int(llm_max_batch_requests))
+    responses: list[str] = [""] * len(mosaics)
+    response_texts: list[str] = [""] * len(mosaics)
+    total_mosaics = len(mosaics)
+    completed = 0
+
+    def caption_mosaic(idx: int, mosaic: Image.Image) -> tuple[int, str]:
         constrained_prompt = (
             f"{user_prompt}\n\n"
-            f"You are viewing temporal mosaic {i} of {len(mosaics)} from one video. "
+            f"You are viewing temporal mosaic {idx} of {total_mosaics} from one video. "
+            "Prioritize suspicious actions, threat indicators, and victim/property risk. "
             "Return only one short sentence. Do not include reasoning."
         )
         try:
-            caption = query_llamacpp(mosaic, constrained_prompt, max_tokens=256)
+            return idx, query_llamacpp(mosaic, constrained_prompt, max_tokens=256)
         except Exception as exc:
-            caption = f"Model inference failed for mosaic {i}: {exc}"
-        response_texts.append(caption)
-        responses.append(f"Mosaic {i}: {caption}")
-        if progress_cb is not None:
-            llm_pct = 55 + int((i / max(len(mosaics), 1)) * 40)
-            progress_cb(min(95, llm_pct), f"Understanding mosaics ({i}/{len(mosaics)})")
+            return idx, f"Model inference failed for mosaic {idx}: {exc}"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(caption_mosaic, i, mosaic) for i, mosaic in enumerate(mosaics, start=1)]
+        for future in concurrent.futures.as_completed(futures):
+            idx, caption = future.result()
+            response_texts[idx - 1] = caption
+            responses[idx - 1] = f"Mosaic {idx}: {caption}"
+            completed += 1
+            if progress_cb is not None:
+                llm_pct = 55 + int((completed / max(total_mosaics, 1)) * 40)
+                progress_cb(min(95, llm_pct), f"Understanding mosaics ({completed}/{total_mosaics})")
 
     all_captions = "\n".join(responses)
     try:
@@ -861,7 +887,8 @@ def run_video_understanding(
     stats = (
         f"Detected person-frames: {len(person_frames)} | "
         f"Mosaic size: {n}x{n} ({frames_per_mosaic} frames/mosaic) | "
-        f"Mosaics generated: {t} (scale divisor: {MOSAIC_SCALE_DIVISOR})"
+        f"Mosaics generated: {t} (scale divisor: {MOSAIC_SCALE_DIVISOR}) | "
+        f"LLM max batch requests: {max_workers}"
     )
     return gallery, all_captions, final_summary, stats, threat_score, threat_assessment
 
@@ -871,6 +898,7 @@ def run_full_analysis(
     conf: float,
     n: int,
     prompt: str,
+    llm_max_batch_requests: int,
     source_video_url: str,
     job_id: str | None = None,
 ) -> dict[str, object]:
@@ -920,7 +948,12 @@ def run_full_analysis(
     try:
         understanding_started = time.perf_counter()
         gallery, captions, summary, understanding_stats, threat_score, threat_assessment = run_video_understanding(
-            upload_path, n=n, prompt=prompt, conf=conf, progress_cb=understanding_progress
+            upload_path,
+            n=n,
+            prompt=prompt,
+            conf=conf,
+            llm_max_batch_requests=llm_max_batch_requests,
+            progress_cb=understanding_progress,
         )
         understanding_processing_seconds = round(time.perf_counter() - understanding_started, 2)
     except Exception as exc:
@@ -998,9 +1031,12 @@ def analyze_route():
         if conf < 0.01 or conf > 0.99:
             raise ValueError("Confidence must be between 0.01 and 0.99.")
         n = int(flask_request.form.get("n", "4"))
+        llm_max_batch_requests = int(flask_request.form.get("llm_max_batch_requests", str(LLM_MAX_BATCH_REQUESTS)))
+        if llm_max_batch_requests < 1:
+            raise ValueError("LLM max batch requests must be at least 1.")
         prompt = flask_request.form.get(
             "prompt",
-            "Caption the overall action taking place across these temporal mosaics from a single video.",
+            "Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.",
         )
 
         ext = Path(upload.filename).suffix.lower()
@@ -1010,7 +1046,14 @@ def analyze_route():
         display_path = OUTPUT_DIR / display_name
         shutil.copy2(upload_path, display_path)
         source_video_url = f"/files/outputs/{display_name}"
-        context = run_full_analysis(upload_path, conf=conf, n=n, prompt=prompt, source_video_url=source_video_url)
+        context = run_full_analysis(
+            upload_path,
+            conf=conf,
+            n=n,
+            prompt=prompt,
+            llm_max_batch_requests=llm_max_batch_requests,
+            source_video_url=source_video_url,
+        )
         return render_page(**context)
     except Exception as exc:
         return render_page(overall_error=str(exc)), 400
@@ -1025,6 +1068,7 @@ def process_analysis_job(
     conf: float,
     n: int,
     prompt: str,
+    llm_max_batch_requests: int,
     source_video_url: str,
 ) -> None:
     try:
@@ -1041,6 +1085,7 @@ def process_analysis_job(
             conf=conf,
             n=n,
             prompt=prompt,
+            llm_max_batch_requests=llm_max_batch_requests,
             source_video_url=source_video_url,
             job_id=job_id,
         )
@@ -1082,9 +1127,12 @@ def analyze_start():
         if conf < 0.01 or conf > 0.99:
             raise ValueError("Confidence must be between 0.01 and 0.99.")
         n = int(flask_request.form.get("n", "4"))
+        llm_max_batch_requests = int(flask_request.form.get("llm_max_batch_requests", str(LLM_MAX_BATCH_REQUESTS)))
+        if llm_max_batch_requests < 1:
+            raise ValueError("LLM max batch requests must be at least 1.")
         prompt = flask_request.form.get(
             "prompt",
-            "Caption the overall action taking place across these temporal mosaics from a single video.",
+            "Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.",
         )
 
         ext = Path(upload.filename).suffix.lower()
@@ -1110,7 +1158,7 @@ def analyze_start():
 
         worker = threading.Thread(
             target=process_analysis_job,
-            args=(job_id, upload_path, conf, n, prompt, source_video_url),
+            args=(job_id, upload_path, conf, n, prompt, llm_max_batch_requests, source_video_url),
             daemon=True,
         )
         worker.start()

@@ -1,0 +1,18 @@
+[project]
+name = "face-detection"
+version = "0.1.0"
+description = "Person detection web demo with GPU auto-selection and ONNX export"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.135.1",
+    "jinja2>=3.1.6",
+    "numpy>=2.4.3",
+    "onnx>=1.20.1",
+    "onnxruntime>=1.24.4",
+    "onnxslim>=0.1.89",
+    "opencv-python>=4.13.0.92",
+    "python-multipart>=0.0.22",
+    "torch>=2.10.0",
+    "ultralytics>=8.4.23",
+    "uvicorn[standard]>=0.42.0",
+]

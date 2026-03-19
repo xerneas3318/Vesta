@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Person Detection Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111827;
+      --card: #1f2937;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1.25rem;
+    }
+    .card {
+      width: min(920px, 100%);
+      background: var(--card);
+      border: 1px solid #374151;
+      border-radius: 14px;
+      padding: 1.25rem;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    }
+    h1 {
+      margin: 0 0 0.3rem;
+      font-size: 1.5rem;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+    form {
+      margin-top: 1rem;
+      display: grid;
+      gap: 0.8rem;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
+    label {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    input[type="file"] {
+      grid-column: 1 / -1;
+      padding: 0.7rem;
+      border-radius: 10px;
+      border: 1px solid #4b5563;
+      background: #111827;
+      color: var(--text);
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    input[type="number"] {
+      width: 100px;
+      padding: 0.55rem;
+      border-radius: 8px;
+      border: 1px solid #4b5563;
+      background: #111827;
+      color: var(--text);
+    }
+    button {
+      border: none;
+      background: var(--accent);
+      color: #0b1220;
+      font-weight: 700;
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .error {
+      margin-top: 0.8rem;
+      color: var(--danger);
+      font-weight: 600;
+    }
+    .result {
+      margin-top: 1.2rem;
+      border-top: 1px solid #374151;
+      padding-top: 1rem;
+    }
+    .note {
+      margin-top: 0.8rem;
+      color: #93c5fd;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    .timer {
+      margin-top: 0.45rem;
+      color: #bfdbfe;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .clips {
+      margin-top: 1rem;
+      display: grid;
+      gap: 1rem;
+    }
+    .clip-item {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+    .clip-meta {
+      margin: 0 0 0.5rem;
+      font-size: 0.9rem;
+      color: #cbd5e1;
+    }
+    .runtime {
+      margin-top: 0.8rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .runtime b {
+      color: #d1d5db;
+    }
+    .progress-wrap {
+      margin-top: 0.8rem;
+      padding: 0.75rem;
+      border-radius: 10px;
+      border: 1px solid #374151;
+      background: #0b1220;
+    }
+    .progress-wrap.hidden {
+      display: none;
+    }
+    .progress-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.45rem;
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #1f2937;
+      border: 1px solid #374151;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2563eb, #60a5fa);
+      transition: width 0.2s ease;
+    }
+    .progress-fill.indeterminate {
+      width: 45%;
+      animation: progress-slide 1.2s ease-in-out infinite;
+    }
+    @keyframes progress-slide {
+      0% { transform: translateX(-130%); }
+      100% { transform: translateX(250%); }
+    }
+    img, video {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #4b5563;
+      background: #030712;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Person Detection Demo</h1>
+    <p>Upload an image or video. The server runs person detection and renders results below.</p>
+    <p class="runtime">
+      <b>Runtime:</b> model={{ runtime.model }} | device={{ runtime.device }} | precision={{ runtime.precision }} | policy={{ runtime.policy }} | batch={{ runtime.video_batch_size }}
+    </p>
+
+    <form id="detect-form" action="/detect" method="post" enctype="multipart/form-data">
+      <input type="file" name="file" accept="image/*,video/*" required />
+      <div class="controls">
+        <label for="conf">Confidence</label>
+        <input type="number" id="conf" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
+      </div>
+      <button type="submit">Run Detection</button>
+    </form>
+    <div id="progress-wrap" class="progress-wrap hidden" aria-live="polite">
+      <div class="progress-head">
+        <span id="progress-label">Preparing upload...</span>
+        <span id="progress-value">0%</span>
+      </div>
+      <div class="progress-track">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+    </div>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if result_url %}
+      <section class="result">
+        <h2>Result</h2>
+        {% if result_note %}
+          <p class="note">{{ result_note }}</p>
+        {% endif %}
+        {% if processing_seconds is not none %}
+          <p class="timer">Processing time: {{ processing_seconds }}s</p>
+        {% endif %}
+        {% if media_kind == "image" %}
+          <img src="{{ result_url }}" alt="Detection result image" />
+        {% else %}
+          <video controls autoplay muted loop preload="metadata">
+            <source src="{{ result_url }}" type="video/mp4" />
+            Your browser could not play this video.
+          </video>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    {% if clip_results %}
+      <section class="result">
+        <h2>Person Clips</h2>
+        {% if result_note %}
+          <p class="note">{{ result_note }}</p>
+        {% endif %}
+        {% if processing_seconds is not none %}
+          <p class="timer">Processing time: {{ processing_seconds }}s</p>
+        {% endif %}
+        <div class="clips">
+          {% for clip in clip_results %}
+            <article class="clip-item">
+              <p class="clip-meta">
+                Clip {{ clip.index }} | {{ clip.start_label }} -> {{ clip.end_label }} ({{ clip.duration_s }}s)
+              </p>
+              <video controls preload="metadata">
+                <source src="{{ clip.url }}" type="video/mp4" />
+                Your browser could not play this clip.
+              </video>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+  </main>
+  <script>
+    (function () {
+      const form = document.getElementById("detect-form");
+      const progressWrap = document.getElementById("progress-wrap");
+      const progressLabel = document.getElementById("progress-label");
+      const progressValue = document.getElementById("progress-value");
+      const progressFill = document.getElementById("progress-fill");
+      const fileInput = form.querySelector('input[type="file"]');
+      const submitBtn = form.querySelector('button[type="submit"]');
+      const confInput = document.getElementById("conf");
+      let processingTimer = null;
+      let processingStartedAt = 0;
+
+      function setProgress(value) {
+        progressFill.classList.remove("indeterminate");
+        progressFill.style.width = value + "%";
+        progressValue.textContent = value + "%";
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (!fileInput.files || fileInput.files.length === 0) {
+          form.submit();
+          return;
+        }
+
+        const formData = new FormData(form);
+        submitBtn.disabled = true;
+        fileInput.disabled = true;
+        confInput.disabled = true;
+        progressWrap.classList.remove("hidden");
+        progressLabel.textContent = "Uploading file...";
+        setProgress(0);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open(form.method, form.action);
+        xhr.responseType = "document";
+
+        xhr.upload.addEventListener("progress", function (evt) {
+          if (!evt.lengthComputable) {
+            return;
+          }
+          const value = Math.min(99, Math.round((evt.loaded / evt.total) * 100));
+          setProgress(value);
+        });
+
+        xhr.upload.addEventListener("load", function () {
+          progressLabel.textContent = "Upload complete. Running GPU detection...";
+          progressValue.textContent = "0.0s";
+          progressFill.classList.add("indeterminate");
+          processingStartedAt = Date.now();
+          processingTimer = window.setInterval(function () {
+            const elapsedSeconds = (Date.now() - processingStartedAt) / 1000;
+            progressValue.textContent = elapsedSeconds.toFixed(1) + "s";
+          }, 100);
+        });
+
+        xhr.addEventListener("load", function () {
+          if (processingTimer) {
+            window.clearInterval(processingTimer);
+          }
+          if (xhr.responseXML && xhr.responseXML.documentElement) {
+            document.open();
+            document.write(xhr.responseXML.documentElement.outerHTML);
+            document.close();
+            return;
+          }
+          window.location.reload();
+        });
+
+        xhr.addEventListener("error", function () {
+          if (processingTimer) {
+            window.clearInterval(processingTimer);
+          }
+          progressLabel.textContent = "Upload failed. Please retry.";
+          progressValue.textContent = "Error";
+          progressFill.classList.remove("indeterminate");
+          progressFill.style.width = "100%";
+          submitBtn.disabled = false;
+          fileInput.disabled = false;
+          confInput.disabled = false;
+        });
+
+        xhr.send(formData);
+      });
+    })();
+  </script>
+</body>
+</html>

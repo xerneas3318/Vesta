@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unified Surveillance UI</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --card: #1e293b;
+      --line: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: radial-gradient(circle at top, #172554, var(--bg) 55%);
+      color: var(--text);
+      padding: 1rem;
+    }
+    main {
+      width: min(1200px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 1rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem;
+    }
+    h1, h2, h3 { margin: 0 0 0.55rem; }
+    p { margin: 0; color: var(--muted); }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+    form { display: grid; gap: 0.7rem; margin-top: 0.8rem; }
+    input[type="file"], input[type="number"], textarea {
+      width: 100%;
+      padding: 0.65rem;
+      border-radius: 9px;
+      border: 1px solid #475569;
+      background: #0b1220;
+      color: var(--text);
+    }
+    button {
+      border: none;
+      border-radius: 9px;
+      padding: 0.7rem 1rem;
+      font-weight: 700;
+      background: var(--accent);
+      color: #082f49;
+      cursor: pointer;
+      width: fit-content;
+    }
+    .error { color: var(--danger); font-weight: 700; margin-top: 0.7rem; }
+    .note { color: #bfdbfe; margin-top: 0.7rem; }
+    .timer { color: #93c5fd; margin-top: 0.45rem; }
+    img, video {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #475569;
+      background: #020617;
+    }
+    .clips, .mosaics {
+      margin-top: 1rem;
+      display: grid;
+      gap: 0.8rem;
+    }
+    .mosaics { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .chip {
+      display: inline-block;
+      font-size: 0.83rem;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      border-radius: 999px;
+      padding: 0.25rem 0.6rem;
+      margin: 0.15rem 0.2rem 0 0;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #0b1220;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 0.8rem;
+      color: #cbd5e1;
+      margin: 0.7rem 0 0;
+    }
+    .progress-wrap {
+      margin-top: 0.9rem;
+      padding: 0.8rem;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      background: #0b1220;
+      display: grid;
+      gap: 0.65rem;
+    }
+    .hidden {
+      display: none;
+    }
+    .progress-row {
+      display: grid;
+      gap: 0.3rem;
+    }
+    .progress-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #1e293b;
+      border: 1px solid #334155;
+      position: relative;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+      transition: width 0.25s ease;
+    }
+    .progress-fill.indeterminate {
+      width: 45%;
+      animation: progress-slide 1.2s ease-in-out infinite;
+    }
+    @keyframes progress-slide {
+      0% { transform: translateX(-130%); }
+      100% { transform: translateX(250%); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card">
+      <h1>Unified Surveillance UI</h1>
+      <p>One Flask app for person detection and video understanding via llama.cpp.</p>
+      <div style="margin-top:0.6rem;">
+        <span class="chip">model={{ runtime.model }}</span>
+        <span class="chip">device={{ runtime.device }}</span>
+        <span class="chip">precision={{ runtime.precision }}</span>
+        <span class="chip">policy={{ runtime.policy }}</span>
+        <span class="chip">batch={{ runtime.video_batch_size }}</span>
+        <span class="chip">llama={{ llamacpp_endpoint }}</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Single Video Analysis</h2>
+      <p>Upload one video and run both person detection and video understanding together.</p>
+
+      <form id="analyze-form" action="/analyze" method="post" enctype="multipart/form-data">
+        <input type="file" name="video" accept="video/*" required />
+        <label for="conf">Detection confidence (0.01 - 0.99)</label>
+        <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
+        <label for="n">n (mosaic side)</label>
+        <input id="n" type="number" name="n" min="1" max="20" step="1" value="4" />
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" name="prompt" rows="4">Caption the overall action taking place across these temporal mosaics from a single video.</textarea>
+        <button type="submit">Run Unified Analysis</button>
+      </form>
+      <div id="progress-wrap" class="progress-wrap hidden" aria-live="polite">
+        <div class="progress-row">
+          <div class="progress-head">
+            <span id="upload-label">Upload</span>
+            <span id="upload-value">0%</span>
+          </div>
+          <div class="progress-track"><div id="upload-fill" class="progress-fill"></div></div>
+        </div>
+        <div class="progress-row">
+          <div class="progress-head">
+            <span id="detect-label">Person detection</span>
+            <span id="detect-value">waiting</span>
+          </div>
+          <div class="progress-track"><div id="detect-fill" class="progress-fill"></div></div>
+        </div>
+        <div class="progress-row">
+          <div class="progress-head">
+            <span id="understand-label">Video understanding</span>
+            <span id="understand-value">waiting</span>
+          </div>
+          <div class="progress-track"><div id="understand-fill" class="progress-fill"></div></div>
+        </div>
+      </div>
+
+      {% if overall_error %}
+        <div class="error">{{ overall_error }}</div>
+      {% endif %}
+
+      {% if overall_processing_seconds is not none %}
+        <div class="timer">Total processing: {{ overall_processing_seconds }}s</div>
+      {% endif %}
+
+      {% if source_video_url %}
+        <div class="clips">
+          <h3>Source Video</h3>
+          <video controls preload="metadata">
+            <source src="{{ source_video_url }}" type="video/mp4" />
+          </video>
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Person Detection Output</h2>
+
+        {% if detect_error %}
+          <div class="error">{{ detect_error }}</div>
+        {% endif %}
+
+        {% if detect_processing_seconds is not none %}
+          <div class="timer">Processing: {{ detect_processing_seconds }}s</div>
+        {% endif %}
+
+        {% if detect_result_note %}
+          <div class="note">{{ detect_result_note }}</div>
+        {% endif %}
+
+        {% if clip_results %}
+          <div class="clips">
+            {% for clip in clip_results %}
+              <article>
+                <p>Clip {{ clip.index }} | {{ clip.start_label }} -> {{ clip.end_label }} ({{ clip.duration_s }}s)</p>
+                <video controls preload="metadata">
+                  <source src="{{ clip.url }}" type="video/mp4" />
+                </video>
+              </article>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </article>
+
+      <article class="card">
+        <h2>Video Understanding Output</h2>
+
+        {% if understanding_error %}
+          <div class="error">{{ understanding_error }}</div>
+        {% endif %}
+
+        {% if understanding_processing_seconds is not none %}
+          <div class="timer">Processing: {{ understanding_processing_seconds }}s</div>
+        {% endif %}
+        {% if understanding_stats %}
+          <div class="note">{{ understanding_stats }}</div>
+        {% endif %}
+
+        {% if understanding_gallery %}
+          <h3 style="margin-top:0.9rem;">Mosaics</h3>
+          <div class="mosaics">
+            {% for item in understanding_gallery %}
+              <figure style="margin:0;">
+                <img src="{{ item.src }}" alt="{{ item.label }}" />
+                <figcaption style="font-size:0.85rem;color:#cbd5e1;">{{ item.label }}</figcaption>
+              </figure>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if understanding_captions %}
+          <h3 style="margin-top:0.9rem;">Mosaic Captions</h3>
+          <pre>{{ understanding_captions }}</pre>
+        {% endif %}
+
+        {% if understanding_summary %}
+          <h3 style="margin-top:0.9rem;">Final Understanding</h3>
+          <pre>{{ understanding_summary }}</pre>
+        {% endif %}
+      </article>
+    </section>
+  </main>
+  <script>
+    (function () {
+      const form = document.getElementById("analyze-form");
+      if (!form) return;
+
+      const progressWrap = document.getElementById("progress-wrap");
+      const uploadLabel = document.getElementById("upload-label");
+      const uploadValue = document.getElementById("upload-value");
+      const uploadFill = document.getElementById("upload-fill");
+      const detectLabel = document.getElementById("detect-label");
+      const detectValue = document.getElementById("detect-value");
+      const detectFill = document.getElementById("detect-fill");
+      const understandLabel = document.getElementById("understand-label");
+      const understandValue = document.getElementById("understand-value");
+      const understandFill = document.getElementById("understand-fill");
+      const submitBtn = form.querySelector("button[type='submit']");
+
+      function setBar(fillEl, value) {
+        fillEl.classList.remove("indeterminate");
+        fillEl.style.width = value + "%";
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        const fileInput = form.querySelector("input[type='file']");
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+          form.submit();
+          return;
+        }
+
+        const formData = new FormData(form);
+        submitBtn.disabled = true;
+        progressWrap.classList.remove("hidden");
+
+        uploadLabel.textContent = "Upload in progress";
+        uploadValue.textContent = "0%";
+        setBar(uploadFill, 0);
+
+        detectLabel.textContent = "Person detection";
+        detectValue.textContent = "waiting";
+        setBar(detectFill, 0);
+
+        understandLabel.textContent = "Video understanding";
+        understandValue.textContent = "waiting";
+        setBar(understandFill, 0);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/analyze/start");
+        xhr.responseType = "json";
+
+        xhr.upload.addEventListener("progress", function (evt) {
+          if (!evt.lengthComputable) return;
+          const pct = Math.min(100, Math.round((evt.loaded / evt.total) * 100));
+          uploadValue.textContent = pct + "%";
+          setBar(uploadFill, pct);
+        });
+
+        xhr.upload.addEventListener("load", function () {
+          uploadLabel.textContent = "Upload complete";
+          uploadValue.textContent = "100%";
+          setBar(uploadFill, 100);
+
+          detectLabel.textContent = "Person detection queued";
+          detectValue.textContent = "0%";
+          setBar(detectFill, 0);
+
+          understandLabel.textContent = "Video understanding queued";
+          understandValue.textContent = "0%";
+          setBar(understandFill, 0);
+        });
+
+        xhr.addEventListener("load", function () {
+          const data = xhr.response || {};
+          if (xhr.status >= 400 || !data.job_id) {
+            uploadLabel.textContent = "Upload failed";
+            detectValue.textContent = "error";
+            understandValue.textContent = "error";
+            submitBtn.disabled = false;
+            return;
+          }
+
+          const jobId = data.job_id;
+          const poll = window.setInterval(async function () {
+            try {
+              const resp = await fetch("/analyze/status/" + jobId, { cache: "no-store" });
+              if (!resp.ok) {
+                return;
+              }
+              const status = await resp.json();
+
+              const detectPct = Math.max(0, Math.min(100, Number(status.detect_progress || 0)));
+              const understandPct = Math.max(0, Math.min(100, Number(status.understanding_progress || 0)));
+              setBar(detectFill, detectPct);
+              setBar(understandFill, understandPct);
+              detectValue.textContent = detectPct + "%";
+              understandValue.textContent = understandPct + "%";
+
+              const stage = String(status.stage || "");
+              const stageMsg = String(status.stage_message || "");
+              if (stage === "detection") {
+                detectLabel.textContent = stageMsg || "Person detection running";
+                understandLabel.textContent = "Video understanding waiting for detection";
+              } else if (stage === "understanding") {
+                detectLabel.textContent = "Person detection complete";
+                understandLabel.textContent = stageMsg || "Video understanding running";
+                setBar(detectFill, 100);
+                detectValue.textContent = "100%";
+              } else if (stage === "complete") {
+                detectLabel.textContent = "Person detection complete";
+                understandLabel.textContent = "Video understanding complete";
+              } else if (stage === "error") {
+                detectLabel.textContent = "Analysis error";
+                understandLabel.textContent = "Analysis error";
+              }
+
+              const state = String(status.state || "");
+              if (state === "done" || state === "error") {
+                window.clearInterval(poll);
+                window.location.href = "/analyze/result/" + jobId;
+              }
+            } catch (_err) {
+              // Continue polling through transient errors.
+            }
+          }, 700);
+        });
+
+        xhr.addEventListener("error", function () {
+          detectFill.classList.remove("indeterminate");
+          understandFill.classList.remove("indeterminate");
+          detectValue.textContent = "error";
+          understandValue.textContent = "error";
+          submitBtn.disabled = false;
+        });
+
+        xhr.send(formData);
+      });
+    })();
+  </script>
+</body>
+</html>

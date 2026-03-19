@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+uploads/
+outputs/
+cache/
+
+# Large model/checkpoint artifacts (keep ONNX export in repo)
+*.pt
+*.pth
+!*.onnx
+
+# Large generated media artifacts
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm

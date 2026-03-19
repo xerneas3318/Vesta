@@ -1,0 +1,16 @@
+[project]
+name = "surveillance-unified"
+version = "0.1.0"
+description = "Unified Flask UI for person detection and temporal-mosaic video understanding"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.1.0",
+    "numpy>=2.4.3",
+    "onnx>=1.20.1",
+    "onnxruntime>=1.24.4",
+    "onnxslim>=0.1.89",
+    "opencv-python>=4.13.0.92",
+    "pillow>=11.3.0",
+    "torch>=2.10.0",
+    "ultralytics>=8.4.23",
+]

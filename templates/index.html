@@ -152,6 +152,7 @@
         <span class="chip">precision={{ runtime.precision }}</span>
         <span class="chip">policy={{ runtime.policy }}</span>
         <span class="chip">batch={{ runtime.video_batch_size }}</span>
+        <span class="chip">llm-batch={{ runtime.llm_max_batch_requests }}</span>
         <span class="chip">llama={{ llamacpp_endpoint }}</span>
       </div>
     </section>
@@ -166,8 +167,10 @@
         <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
         <label for="n">n (mosaic side)</label>
         <input id="n" type="number" name="n" min="1" max="20" step="1" value="4" />
+        <label for="llm_max_batch_requests">LLM max batch requests</label>
+        <input id="llm_max_batch_requests" type="number" name="llm_max_batch_requests" min="1" max="64" step="1" value="{{ runtime.llm_max_batch_requests }}" />
         <label for="prompt">Prompt</label>
-        <textarea id="prompt" name="prompt" rows="4">Caption the overall action taking place across these temporal mosaics from a single video.</textarea>
+        <textarea id="prompt" name="prompt" rows="4">Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.</textarea>
         <button type="submit">Run Unified Analysis</button>
       </form>
       <div id="progress-wrap" class="progress-wrap hidden" aria-live="polite">

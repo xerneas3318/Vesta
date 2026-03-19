@@ -277,6 +277,14 @@
           <h3 style="margin-top:0.9rem;">Final Understanding</h3>
           <pre>{{ understanding_summary }}</pre>
         {% endif %}
+
+        {% if threat_score is not none %}
+          <h3 style="margin-top:0.9rem;">Threat Assessment</h3>
+          <p class="note" style="font-size:1.05rem;">Threat score: <strong>{{ threat_score }}/100</strong></p>
+        {% endif %}
+        {% if threat_assessment %}
+          <pre>{{ threat_assessment }}</pre>
+        {% endif %}
       </article>
     </section>
   </main>

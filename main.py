@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -510,7 +511,6 @@ def make_mosaic(frames: list[np.ndarray], n: int, cell_size: int = 224) -> Image
     cells = n * n
     canvas = Image.new("RGB", (n * cell_size, n * cell_size), color=(0, 0, 0))
     for i in range(cells):
-        # Always fill every cell from person-detected frames only.
         frame = Image.fromarray(frames[i % len(frames)])
         fitted = ImageOps.fit(frame, (cell_size, cell_size), method=Image.Resampling.LANCZOS)
         r, c = divmod(i, n)
@@ -523,10 +523,18 @@ def build_temporal_mosaics(video_path: str, n: int, t: int, cell_size: int = 224
     t = max(1, int(t))
     cells = n * n
     sampled = sample_frames(video_path, cells * t)
+    sampled_count = len(sampled)
+    if sampled_count == 0:
+        raise RuntimeError("No frames were sampled from the video.")
     mosaics: list[Image.Image] = []
     for offset in range(t):
+        # Interleave across the full sampled timeline so each mosaic spans
+        # the entire video while staying temporally staggered from others.
         frame_group = sampled[offset::t]
-        mosaics.append(make_mosaic(frame_group[:cells], n=n, cell_size=cell_size))
+        if not frame_group:
+            frame_group = [sampled[offset % sampled_count]]
+        frame_group = frame_group[:cells]
+        mosaics.append(make_mosaic(frame_group, n=n, cell_size=cell_size))
     return mosaics
 
 
@@ -575,19 +583,13 @@ def build_temporal_mosaics_from_frames(person_frames: list[np.ndarray], n: int, 
     t = max(1, int(t))
     cells = n * n
     mosaics: list[Image.Image] = []
-    if cells == 1:
-        base_positions = np.array([0.0], dtype=float)
-    else:
-        base_positions = np.linspace(0.0, 1.0, num=cells, endpoint=False, dtype=float)
-
     frame_count = len(person_frames)
-    for i in range(t):
-        # Offset each mosaic in normalized time so each mosaic is distinct
-        # while still spreading frames across the full person-detected span.
-        phase = i / t
-        norm_positions = (base_positions + phase) % 1.0
-        indices = np.clip(np.round(norm_positions * max(frame_count - 1, 0)).astype(int), 0, frame_count - 1)
-        frame_group = [person_frames[idx] for idx in indices.tolist()]
+    for offset in range(t):
+        # Interleave detected frames to produce staggered mosaics.
+        frame_group = person_frames[offset::t]
+        if not frame_group:
+            frame_group = [person_frames[offset % frame_count]]
+        frame_group = frame_group[:cells]
         mosaics.append(make_mosaic(frame_group, n=n, cell_size=cell_size))
     return mosaics
 
@@ -653,17 +655,28 @@ def parse_llamacpp_caption(response_body: str) -> str:
     raise RuntimeError(f"llama.cpp returned no assistant text. Raw excerpt: {response_body[:400]}")
 
 
-def query_llamacpp(mosaic: Image.Image, prompt: str, max_tokens: int = 192, system_prompt: str | None = None) -> str:
+def _build_image_content(images: list[Image.Image]) -> list[dict[str, object]]:
+    return [{"type": "image_url", "image_url": {"url": pil_to_data_url(img)}} for img in images]
+
+
+def query_llamacpp_with_images(
+    images: list[Image.Image],
+    prompt: str,
+    max_tokens: int = 192,
+    system_prompt: str | None = None,
+) -> str:
+    if not images:
+        raise RuntimeError("At least one image is required for llama.cpp query.")
+
     messages: list[dict[str, object]] = []
     if system_prompt and system_prompt.strip():
         messages.append({"role": "system", "content": system_prompt})
+    content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
+    content.extend(_build_image_content(images))
     messages.append(
         {
             "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": pil_to_data_url(mosaic)}},
-            ],
+            "content": content,
         }
     )
 
@@ -695,6 +708,10 @@ def query_llamacpp(mosaic: Image.Image, prompt: str, max_tokens: int = 192, syst
     return parse_llamacpp_caption(body)
 
 
+def query_llamacpp(mosaic: Image.Image, prompt: str, max_tokens: int = 192, system_prompt: str | None = None) -> str:
+    return query_llamacpp_with_images([mosaic], prompt, max_tokens=max_tokens, system_prompt=system_prompt)
+
+
 def summarize_mosaic_answers(first_mosaic: Image.Image | None, mosaic_answers: str) -> str:
     if first_mosaic is None:
         raise RuntimeError("No first mosaic available.")
@@ -716,13 +733,72 @@ def summarize_mosaic_answers(first_mosaic: Image.Image | None, mosaic_answers: s
     return query_llamacpp(first_mosaic, user_prompt, max_tokens=384, system_prompt=system_prompt)
 
 
+def parse_threat_assessment(raw_text: str) -> tuple[int, str]:
+    score = 0
+    assessment = raw_text.strip()
+    try:
+        parsed = json.loads(raw_text)
+        if isinstance(parsed, dict):
+            maybe_score = parsed.get("threat_score")
+            if isinstance(maybe_score, (int, float)):
+                score = int(max(0, min(100, round(float(maybe_score)))))
+            maybe_assessment = parsed.get("assessment")
+            if isinstance(maybe_assessment, str) and maybe_assessment.strip():
+                assessment = maybe_assessment.strip()
+    except Exception:
+        pass
+
+    if score == 0:
+        match = re.search(r"\b(100|[1-9]?\d)\b", raw_text)
+        if match:
+            score = int(match.group(1))
+
+    if not assessment:
+        assessment = "Threat assessment unavailable."
+    return score, assessment
+
+
+def generate_threat_assessment(
+    first_mosaic: Image.Image | None,
+    second_mosaic: Image.Image | None,
+    first_caption: str,
+    second_caption: str,
+    final_summary: str,
+) -> tuple[int, str]:
+    if first_mosaic is None:
+        raise RuntimeError("No first mosaic available for threat assessment.")
+
+    images = [first_mosaic]
+    if second_mosaic is not None:
+        images.append(second_mosaic)
+
+    system_prompt = (
+        "You are a video security analyst. Output only strict JSON with keys "
+        "`threat_score` (integer 0-100) and `assessment` (one short sentence)."
+    )
+    user_prompt = (
+        "Create a threat assessment out of 100 using these inputs:\n"
+        f"- First mosaic understanding: {first_caption or 'N/A'}\n"
+        f"- Second mosaic understanding: {second_caption or 'N/A'}\n"
+        f"- Final video understanding: {final_summary or 'N/A'}\n\n"
+        "Scoring guide:\n"
+        "- 0 to 20: benign\n"
+        "- 21 to 50: suspicious but non-violent\n"
+        "- 51 to 80: likely dangerous behavior\n"
+        "- 81 to 100: immediate high-risk threat\n\n"
+        "Return strict JSON only."
+    )
+    raw = query_llamacpp_with_images(images, user_prompt, max_tokens=160, system_prompt=system_prompt)
+    return parse_threat_assessment(raw)
+
+
 def run_video_understanding(
     video_path: Path,
     n: int,
     prompt: str,
     conf: float,
     progress_cb: callable | None = None,
-) -> tuple[list[dict[str, str]], str, str, str]:
+) -> tuple[list[dict[str, str]], str, str, str, int | None, str | None]:
     n = max(1, int(n))
     if progress_cb is not None:
         progress_cb(2, "Starting video understanding")
@@ -733,12 +809,13 @@ def run_video_understanding(
     scaled_frames_per_mosaic = frames_per_mosaic * MOSAIC_SCALE_DIVISOR
     dynamic_t = max(1, (len(person_frames) + scaled_frames_per_mosaic - 1) // scaled_frames_per_mosaic)
     t = min(dynamic_t, MAX_DYNAMIC_MOSAICS)
-    mosaics = build_temporal_mosaics_from_frames(person_frames, n=n, t=t)
+    mosaics = build_temporal_mosaics(str(video_path), n=n, t=t)
     if progress_cb is not None:
-        progress_cb(55, "Built temporal person mosaics")
+        progress_cb(55, "Built temporal staggered mosaics")
 
     user_prompt = prompt.strip() or "Describe the overall action taking place in this video."
     responses: list[str] = []
+    response_texts: list[str] = []
     for i, mosaic in enumerate(mosaics, start=1):
         constrained_prompt = (
             f"{user_prompt}\n\n"
@@ -749,6 +826,7 @@ def run_video_understanding(
             caption = query_llamacpp(mosaic, constrained_prompt, max_tokens=256)
         except Exception as exc:
             caption = f"Model inference failed for mosaic {i}: {exc}"
+        response_texts.append(caption)
         responses.append(f"Mosaic {i}: {caption}")
         if progress_cb is not None:
             llm_pct = 55 + int((i / max(len(mosaics), 1)) * 40)
@@ -759,6 +837,21 @@ def run_video_understanding(
         final_summary = summarize_mosaic_answers(mosaics[0] if mosaics else None, all_captions)
     except Exception as exc:
         final_summary = f"Final summary failed: {exc}"
+    threat_score: int | None = None
+    threat_assessment: str | None = None
+    try:
+        first_caption = response_texts[0] if len(response_texts) > 0 else ""
+        second_caption = response_texts[1] if len(response_texts) > 1 else ""
+        second_mosaic = mosaics[1] if len(mosaics) > 1 else None
+        threat_score, threat_assessment = generate_threat_assessment(
+            first_mosaic=mosaics[0] if mosaics else None,
+            second_mosaic=second_mosaic,
+            first_caption=first_caption,
+            second_caption=second_caption,
+            final_summary=final_summary,
+        )
+    except Exception as exc:
+        threat_assessment = f"Threat assessment failed: {exc}"
     if progress_cb is not None:
         progress_cb(100, "Video understanding complete")
 
@@ -770,7 +863,7 @@ def run_video_understanding(
         f"Mosaic size: {n}x{n} ({frames_per_mosaic} frames/mosaic) | "
         f"Mosaics generated: {t} (scale divisor: {MOSAIC_SCALE_DIVISOR})"
     )
-    return gallery, all_captions, final_summary, stats
+    return gallery, all_captions, final_summary, stats, threat_score, threat_assessment
 
 
 def run_full_analysis(
@@ -822,9 +915,11 @@ def run_full_analysis(
     captions: str | None = None
     summary: str | None = None
     understanding_stats: str | None = None
+    threat_score: int | None = None
+    threat_assessment: str | None = None
     try:
         understanding_started = time.perf_counter()
-        gallery, captions, summary, understanding_stats = run_video_understanding(
+        gallery, captions, summary, understanding_stats, threat_score, threat_assessment = run_video_understanding(
             upload_path, n=n, prompt=prompt, conf=conf, progress_cb=understanding_progress
         )
         understanding_processing_seconds = round(time.perf_counter() - understanding_started, 2)
@@ -850,6 +945,8 @@ def run_full_analysis(
         "understanding_captions": captions,
         "understanding_summary": summary,
         "understanding_stats": understanding_stats,
+        "threat_score": threat_score,
+        "threat_assessment": threat_assessment,
         "understanding_processing_seconds": understanding_processing_seconds,
         "overall_processing_seconds": overall_processing_seconds,
     }
@@ -870,6 +967,8 @@ def render_page(**overrides: object):
         "understanding_captions": None,
         "understanding_summary": None,
         "understanding_stats": None,
+        "threat_score": None,
+        "threat_assessment": None,
         "understanding_processing_seconds": None,
         "llamacpp_endpoint": LLAMACPP_BASE_URL,
     }

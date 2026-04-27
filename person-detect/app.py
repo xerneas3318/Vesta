@@ -29,6 +29,7 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 REQUIRE_GPU = os.getenv("REQUIRE_GPU", "1").strip().lower() not in {"0", "false", "no"}
 VIDEO_BATCH_SIZE = max(1, int(os.getenv("VIDEO_BATCH_SIZE", "32")))
+YOLO_FRAME_WORKERS = max(1, int(os.getenv("YOLO_FRAME_WORKERS", "4")))
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -142,6 +143,7 @@ def runtime_status() -> dict[str, str]:
         "precision": "fp16" if inference_half else "fp32",
         "policy": "gpu-only" if REQUIRE_GPU else "auto-fallback",
         "video_batch_size": str(VIDEO_BATCH_SIZE),
+        "yolo_frame_workers": str(YOLO_FRAME_WORKERS),
     }
 
 
@@ -247,6 +249,7 @@ def detect_person_segments(
             classes=person_class_ids,
             device=inference_device,
             half=inference_half,
+            workers=YOLO_FRAME_WORKERS,
             stream=False,
             save=False,
             verbose=False,
@@ -328,6 +331,7 @@ def create_annotated_source_video(
         classes=person_class_ids,
         device=inference_device,
         half=inference_half,
+        workers=YOLO_FRAME_WORKERS,
         stream=False,
         save=True,
         project=str(clip_dir),
@@ -427,6 +431,7 @@ def run_inference(
         classes=person_class_ids,
         device=inference_device,
         half=inference_half,
+        workers=YOLO_FRAME_WORKERS,
         stream=False,
         save=True,
         project=str(OUTPUT_DIR),

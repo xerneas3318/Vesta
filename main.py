@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import torch
 from flask import Flask, jsonify, render_template, request as flask_request, send_from_directory
-from PIL import Image, ImageOps
+from PIL import Image
 from ultralytics import YOLO
 
 
@@ -36,11 +36,13 @@ ONNX_MODEL_PATH = PERSON_DIR / "yolo26s.onnx"
 
 LLAMACPP_BASE_URL = os.getenv("LLAMACPP_BASE_URL", "http://127.0.0.1:8078")
 LLAMACPP_MODEL = os.getenv("LLAMACPP_MODEL", "local-model")
-REQUIRE_GPU = os.getenv("REQUIRE_GPU", "1").strip().lower() not in {"0", "false", "no"}
+REQUIRE_GPU = os.getenv("REQUIRE_GPU", "1").strip().lower() not in {
+    "0", "false", "no"}
 VIDEO_BATCH_SIZE = max(1, int(os.getenv("VIDEO_BATCH_SIZE", "32")))
+YOLO_FRAME_WORKERS = max(1, int(os.getenv("YOLO_FRAME_WORKERS", "4")))
 MAX_DYNAMIC_MOSAICS = max(1, int(os.getenv("MAX_DYNAMIC_MOSAICS", "24")))
 MOSAIC_SCALE_DIVISOR = max(1, int(os.getenv("MOSAIC_SCALE_DIVISOR", "8")))
-LLM_MAX_BATCH_REQUESTS = max(1, int(os.getenv("LLM_MAX_BATCH_REQUESTS", "4")))
+LLM_MAX_BATCH_REQUESTS = max(1, int(os.getenv("LLM_MAX_BATCH_REQUESTS", "16")))
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,16 +98,19 @@ def select_model_and_device() -> tuple[Path, str, bool]:
             return PT_MODEL_PATH, "cuda:0", True
         if ONNX_MODEL_PATH.exists():
             return ONNX_MODEL_PATH, "cuda:0", False
-        raise RuntimeError(f"No model found at {PT_MODEL_PATH} or {ONNX_MODEL_PATH}.")
+        raise RuntimeError(f"No model found at {
+                           PT_MODEL_PATH} or {ONNX_MODEL_PATH}.")
 
     if REQUIRE_GPU:
-        raise RuntimeError("GPU mode is required but CUDA is unavailable. Set REQUIRE_GPU=0 for CPU fallback.")
+        raise RuntimeError(
+            "GPU mode is required but CUDA is unavailable. Set REQUIRE_GPU=0 for CPU fallback.")
 
     if ONNX_MODEL_PATH.exists():
         return ONNX_MODEL_PATH, "cpu", False
     if PT_MODEL_PATH.exists():
         return PT_MODEL_PATH, "cpu", False
-    raise RuntimeError(f"No model found at {PT_MODEL_PATH} or {ONNX_MODEL_PATH}.")
+    raise RuntimeError(f"No model found at {
+                       PT_MODEL_PATH} or {ONNX_MODEL_PATH}.")
 
 
 def get_model() -> YOLO:
@@ -129,6 +134,7 @@ def runtime_status() -> dict[str, str]:
         "precision": "fp16" if inference_half else "fp32",
         "policy": "gpu-only" if REQUIRE_GPU else "auto-fallback",
         "video_batch_size": str(VIDEO_BATCH_SIZE),
+        "yolo_frame_workers": str(YOLO_FRAME_WORKERS),
         "llm_max_batch_requests": str(LLM_MAX_BATCH_REQUESTS),
     }
 
@@ -244,7 +250,8 @@ def detect_person_segments(
 ) -> tuple[list[tuple[float, float]], int]:
     fps, duration = probe_video_metadata(src_path)
     capture = cv2.VideoCapture(str(src_path))
-    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT)) if capture.isOpened() else 0
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT)
+                       ) if capture.isOpened() else 0
     capture.release()
 
     active_start: int | None = None
@@ -258,6 +265,7 @@ def detect_person_segments(
             classes=person_class_ids,
             device=inference_device,
             half=inference_half,
+            workers=YOLO_FRAME_WORKERS,
             stream=False,
             save=False,
             verbose=False,
@@ -272,11 +280,13 @@ def detect_person_segments(
                 frame_segments.append((active_start, frame_idx - 1))
                 active_start = None
         if progress_cb is not None and total_frames > 0:
-            scan_pct = min(75, max(5, int((processed_frames / total_frames) * 75)))
+            scan_pct = min(
+                75, max(5, int((processed_frames / total_frames) * 75)))
             progress_cb(scan_pct, "Scanning video for person detections")
 
     if active_start is not None:
-        frame_segments.append((active_start, max(processed_frames - 1, active_start)))
+        frame_segments.append(
+            (active_start, max(processed_frames - 1, active_start)))
 
     if not frame_segments:
         return [], processed_frames
@@ -342,6 +352,7 @@ def create_annotated_source_video(
         classes=person_class_ids,
         device=inference_device,
         half=inference_half,
+        workers=YOLO_FRAME_WORKERS,
         stream=False,
         save=True,
         project=str(clip_dir),
@@ -353,7 +364,8 @@ def create_annotated_source_video(
     if default_out.exists():
         return default_out
 
-    candidates = sorted((p for p in ann_root.iterdir() if p.is_file()), key=lambda p: p.stat().st_mtime)
+    candidates = sorted((p for p in ann_root.iterdir()
+                        if p.is_file()), key=lambda p: p.stat().st_mtime)
     if not candidates:
         raise RuntimeError("Failed to produce annotated video.")
     return candidates[-1]
@@ -369,7 +381,8 @@ def run_video_clipper(
     file_hash = sha256_file(src_path)
     model_name = loaded_model_path.stem if loaded_model_path else "unknown"
     runtime_name = "gpu" if inference_device.startswith("cuda") else "cpu"
-    cache_key = f"{file_hash[:16]}_{model_name}_{runtime_name}_c{int(conf * 1000):03d}"
+    cache_key = f"{file_hash[:16]}_{model_name}_{
+        runtime_name}_c{int(conf * 1000):03d}"
     clip_dir = CLIPS_CACHE_DIR / cache_key
     manifest_path = clip_dir / "manifest.json"
 
@@ -399,7 +412,8 @@ def run_video_clipper(
 
     if progress_cb is not None:
         progress_cb(85, "Rendering annotated detection video")
-    annotated_video = create_annotated_source_video(src_path, clip_dir, detector, person_class_ids, conf)
+    annotated_video = create_annotated_source_video(
+        src_path, clip_dir, detector, person_class_ids, conf)
     clips: list[dict[str, object]] = []
     for idx, (start_s, end_s) in enumerate(segments):
         clip_name = f"clip_{idx:03d}.mp4"
@@ -419,7 +433,8 @@ def run_video_clipper(
         )
         if progress_cb is not None:
             clip_pct = 90 + int(((idx + 1) / max(len(segments), 1)) * 10)
-            progress_cb(min(100, clip_pct), f"Cutting person clips ({idx + 1}/{len(segments)})")
+            progress_cb(min(100, clip_pct),
+                        f"Cutting person clips ({idx + 1}/{len(segments)})")
 
     manifest = {
         "source_sha256": file_hash,
@@ -447,7 +462,8 @@ def run_person_detection(
     progress_cb: callable | None = None,
 ) -> tuple[str | None, str | None, list[dict[str, object]]]:
     if media_kind == "video":
-        clips, note = run_video_clipper(src_path, conf, progress_cb=progress_cb)
+        clips, note = run_video_clipper(
+            src_path, conf, progress_cb=progress_cb)
         return None, note, clips
 
     detector = get_model()
@@ -459,6 +475,7 @@ def run_person_detection(
         classes=person_class_ids,
         device=inference_device,
         half=inference_half,
+        workers=YOLO_FRAME_WORKERS,
         stream=False,
         save=True,
         project=str(OUTPUT_DIR),
@@ -472,7 +489,8 @@ def run_person_detection(
     if default_out.exists():
         return f"/files/outputs/{run_dir_name}/{default_out.name}", None, []
 
-    output_files = sorted((p for p in out_dir.iterdir() if p.is_file()), key=lambda p: p.stat().st_mtime)
+    output_files = sorted((p for p in out_dir.iterdir()
+                          if p.is_file()), key=lambda p: p.stat().st_mtime)
     if not output_files:
         raise RuntimeError("Inference finished but no output was produced.")
     output_file = output_files[-1]
@@ -490,7 +508,8 @@ def sample_frames(video_path: str, sample_count: int) -> list[np.ndarray]:
         raise RuntimeError("Could not read video frame count.")
 
     sample_count = max(1, sample_count)
-    indices = np.linspace(0, max(frame_count - 1, 0), num=sample_count, dtype=int)
+    indices = np.linspace(0, max(frame_count - 1, 0),
+                          num=sample_count, dtype=int)
 
     frames: list[np.ndarray] = []
     for idx in indices:
@@ -507,18 +526,35 @@ def sample_frames(video_path: str, sample_count: int) -> list[np.ndarray]:
     return frames
 
 
-def make_mosaic(frames: list[np.ndarray], n: int, cell_size: int = 224) -> Image.Image:
+def make_mosaic(
+    frames: list[np.ndarray],
+    n: int,
+    cell_size: int = 224,
+    source_color: str = "rgb",
+) -> Image.Image:
     if not frames:
         raise RuntimeError("Cannot build a mosaic with zero frames.")
     n = max(1, n)
     cells = n * n
-    canvas = Image.new("RGB", (n * cell_size, n * cell_size), color=(0, 0, 0))
+    tile_size = max(1, int(cell_size))
+    canvas = np.zeros((n * tile_size, n * tile_size, 3), dtype=np.uint8)
+    frame_count = len(frames)
     for i in range(cells):
-        frame = Image.fromarray(frames[i % len(frames)])
-        fitted = ImageOps.fit(frame, (cell_size, cell_size), method=Image.Resampling.LANCZOS)
+        frame = frames[i % frame_count]
+        if frame is None or frame.size == 0:
+            continue
+        interpolation = cv2.INTER_AREA if frame.shape[
+            0] > tile_size or frame.shape[1] > tile_size else cv2.INTER_LINEAR
+        resized = cv2.resize(frame, (tile_size, tile_size),
+                             interpolation=interpolation)
         r, c = divmod(i, n)
-        canvas.paste(fitted, (c * cell_size, r * cell_size))
-    return canvas
+        y0 = r * tile_size
+        x0 = c * tile_size
+        canvas[y0: y0 + tile_size, x0: x0 + tile_size] = resized
+
+    if source_color.lower() == "bgr":
+        canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(canvas, mode="RGB")
 
 
 def build_temporal_mosaics(video_path: str, n: int, t: int, cell_size: int = 224) -> list[Image.Image]:
@@ -529,16 +565,28 @@ def build_temporal_mosaics(video_path: str, n: int, t: int, cell_size: int = 224
     sampled_count = len(sampled)
     if sampled_count == 0:
         raise RuntimeError("No frames were sampled from the video.")
-    mosaics: list[Image.Image] = []
-    for offset in range(t):
+
+    def build_one_mosaic(offset: int) -> tuple[int, Image.Image]:
         # Interleave across the full sampled timeline so each mosaic spans
         # the entire video while staying temporally staggered from others.
         frame_group = sampled[offset::t]
         if not frame_group:
             frame_group = [sampled[offset % sampled_count]]
         frame_group = frame_group[:cells]
-        mosaics.append(make_mosaic(frame_group, n=n, cell_size=cell_size))
-    return mosaics
+        return offset, make_mosaic(frame_group, n=n, cell_size=cell_size, source_color="rgb")
+
+    mosaics: list[Image.Image | None] = [None] * t
+    mosaic_workers = min(t, max(1, os.cpu_count() or 1))
+    if mosaic_workers == 1:
+        for offset in range(t):
+            idx, mosaic = build_one_mosaic(offset)
+            mosaics[idx] = mosaic
+        return [m for m in mosaics if m is not None]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=mosaic_workers) as executor:
+        for idx, mosaic in executor.map(build_one_mosaic, range(t)):
+            mosaics[idx] = mosaic
+    return [m for m in mosaics if m is not None]
 
 
 def collect_person_frames_for_mosaic(
@@ -550,7 +598,8 @@ def collect_person_frames_for_mosaic(
     person_class_ids = get_person_class_ids(detector)
     selected: list[np.ndarray] = []
     capture = cv2.VideoCapture(str(video_path))
-    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT)) if capture.isOpened() else 0
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT)
+                       ) if capture.isOpened() else 0
     capture.release()
     processed_frames = 0
 
@@ -561,6 +610,7 @@ def collect_person_frames_for_mosaic(
             classes=person_class_ids,
             device=inference_device,
             half=inference_half,
+            workers=YOLO_FRAME_WORKERS,
             stream=False,
             save=False,
             verbose=False,
@@ -569,11 +619,11 @@ def collect_person_frames_for_mosaic(
             has_person = result.boxes is not None and len(result.boxes) > 0
             if not has_person:
                 continue
-            frame_rgb = cv2.cvtColor(frame_batch[idx_in_batch], cv2.COLOR_BGR2RGB)
-            selected.append(frame_rgb)
+            selected.append(frame_batch[idx_in_batch])
         processed_frames = batch_start_idx + len(frame_batch)
         if progress_cb is not None and total_frames > 0:
-            scan_pct = min(45, max(5, int((processed_frames / total_frames) * 45)))
+            scan_pct = min(
+                45, max(5, int((processed_frames / total_frames) * 45)))
             progress_cb(scan_pct, "Collecting person-detected frames")
 
     return selected
@@ -585,16 +635,28 @@ def build_temporal_mosaics_from_frames(person_frames: list[np.ndarray], n: int, 
     n = max(1, int(n))
     t = max(1, int(t))
     cells = n * n
-    mosaics: list[Image.Image] = []
     frame_count = len(person_frames)
-    for offset in range(t):
+
+    def build_one_mosaic(offset: int) -> tuple[int, Image.Image]:
         # Interleave detected frames to produce staggered mosaics.
         frame_group = person_frames[offset::t]
         if not frame_group:
             frame_group = [person_frames[offset % frame_count]]
         frame_group = frame_group[:cells]
-        mosaics.append(make_mosaic(frame_group, n=n, cell_size=cell_size))
-    return mosaics
+        return offset, make_mosaic(frame_group, n=n, cell_size=cell_size, source_color="bgr")
+
+    mosaics: list[Image.Image | None] = [None] * t
+    mosaic_workers = min(t, max(1, os.cpu_count() or 1))
+    if mosaic_workers == 1:
+        for offset in range(t):
+            idx, mosaic = build_one_mosaic(offset)
+            mosaics[idx] = mosaic
+        return [m for m in mosaics if m is not None]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=mosaic_workers) as executor:
+        for idx, mosaic in executor.map(build_one_mosaic, range(t)):
+            mosaics[idx] = mosaic
+    return [m for m in mosaics if m is not None]
 
 
 def pil_to_data_url(image: Image.Image) -> str:
@@ -627,7 +689,8 @@ def parse_llamacpp_caption(response_body: str) -> str:
     data = json.loads(response_body)
     choices = data.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise RuntimeError(f"Unexpected llama.cpp response: {response_body[:400]}")
+        raise RuntimeError(f"Unexpected llama.cpp response: {
+                           response_body[:400]}")
 
     first = choices[0]
     if not isinstance(first, dict):
@@ -655,7 +718,8 @@ def parse_llamacpp_caption(response_body: str) -> str:
         if d_text:
             return d_text
 
-    raise RuntimeError(f"llama.cpp returned no assistant text. Raw excerpt: {response_body[:400]}")
+    raise RuntimeError(f"llama.cpp returned no assistant text. Raw excerpt: {
+                       response_body[:400]}")
 
 
 def _build_image_content(images: list[Image.Image]) -> list[dict[str, object]]:
@@ -669,7 +733,8 @@ def query_llamacpp_with_images(
     system_prompt: str | None = None,
 ) -> str:
     if not images:
-        raise RuntimeError("At least one image is required for llama.cpp query.")
+        raise RuntimeError(
+            "At least one image is required for llama.cpp query.")
 
     messages: list[dict[str, object]] = []
     if system_prompt and system_prompt.strip():
@@ -704,9 +769,11 @@ def query_llamacpp_with_images(
             body = resp.read().decode("utf-8")
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"llama.cpp server error ({exc.code}): {detail}") from exc
+        raise RuntimeError(f"llama.cpp server error ({exc.code}): {
+                           detail}") from exc
     except error.URLError as exc:
-        raise RuntimeError(f"Could not reach llama.cpp at {endpoint}.") from exc
+        raise RuntimeError(f"Could not reach llama.cpp at {
+                           endpoint}.") from exc
 
     return parse_llamacpp_caption(body)
 
@@ -798,7 +865,8 @@ def generate_threat_assessment(
         "When uncertain between two ranges, choose the higher range if suspicious indicators are present.\n"
         "Return strict JSON only."
     )
-    raw = query_llamacpp_with_images(images, user_prompt, max_tokens=160, system_prompt=system_prompt)
+    raw = query_llamacpp_with_images(
+        images, user_prompt, max_tokens=160, system_prompt=system_prompt)
     return parse_threat_assessment(raw)
 
 
@@ -813,12 +881,15 @@ def run_video_understanding(
     n = max(1, int(n))
     if progress_cb is not None:
         progress_cb(2, "Starting video understanding")
-    person_frames = collect_person_frames_for_mosaic(video_path, conf=conf, progress_cb=progress_cb)
+    person_frames = collect_person_frames_for_mosaic(
+        video_path, conf=conf, progress_cb=progress_cb)
     if not person_frames:
-        raise RuntimeError("No YOLO person-detected frames were found for video understanding.")
+        raise RuntimeError(
+            "No YOLO person-detected frames were found for video understanding.")
     frames_per_mosaic = n * n
     scaled_frames_per_mosaic = frames_per_mosaic * MOSAIC_SCALE_DIVISOR
-    dynamic_t = max(1, (len(person_frames) + scaled_frames_per_mosaic - 1) // scaled_frames_per_mosaic)
+    dynamic_t = max(1, (len(person_frames) +
+                    scaled_frames_per_mosaic - 1) // scaled_frames_per_mosaic)
     t = min(dynamic_t, MAX_DYNAMIC_MOSAICS)
     mosaics = build_temporal_mosaics(str(video_path), n=n, t=t)
     if progress_cb is not None:
@@ -838,7 +909,8 @@ def run_video_understanding(
     def caption_mosaic(idx: int, mosaic: Image.Image) -> tuple[int, str]:
         constrained_prompt = (
             f"{user_prompt}\n\n"
-            f"You are viewing temporal mosaic {idx} of {total_mosaics} from one video. "
+            f"You are viewing temporal mosaic {idx} of {
+                total_mosaics} from one video. "
             "Prioritize suspicious actions, threat indicators, and victim/property risk. "
             "Return only one short sentence. Do not include reasoning."
         )
@@ -848,7 +920,8 @@ def run_video_understanding(
             return idx, f"Model inference failed for mosaic {idx}: {exc}"
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(caption_mosaic, i, mosaic) for i, mosaic in enumerate(mosaics, start=1)]
+        futures = [executor.submit(caption_mosaic, i, mosaic)
+                   for i, mosaic in enumerate(mosaics, start=1)]
         for future in concurrent.futures.as_completed(futures):
             idx, caption = future.result()
             response_texts[idx - 1] = caption
@@ -856,11 +929,13 @@ def run_video_understanding(
             completed += 1
             if progress_cb is not None:
                 llm_pct = 55 + int((completed / max(total_mosaics, 1)) * 40)
-                progress_cb(min(95, llm_pct), f"Understanding mosaics ({completed}/{total_mosaics})")
+                progress_cb(min(95, llm_pct), f"Understanding mosaics ({
+                            completed}/{total_mosaics})")
 
     all_captions = "\n".join(responses)
     try:
-        final_summary = summarize_mosaic_answers(mosaics[0] if mosaics else None, all_captions)
+        final_summary = summarize_mosaic_answers(
+            mosaics[0] if mosaics else None, all_captions)
     except Exception as exc:
         final_summary = f"Final summary failed: {exc}"
     threat_score: int | None = None
@@ -931,7 +1006,8 @@ def run_full_analysis(
         _result_url, result_note, clip_results = run_person_detection(
             upload_path, conf, "video", progress_cb=detect_progress
         )
-        detect_processing_seconds = round(time.perf_counter() - detect_started, 2)
+        detect_processing_seconds = round(
+            time.perf_counter() - detect_started, 2)
     except Exception as exc:
         detect_error = str(exc)
         if job_id is not None:
@@ -955,7 +1031,8 @@ def run_full_analysis(
             llm_max_batch_requests=llm_max_batch_requests,
             progress_cb=understanding_progress,
         )
-        understanding_processing_seconds = round(time.perf_counter() - understanding_started, 2)
+        understanding_processing_seconds = round(
+            time.perf_counter() - understanding_started, 2)
     except Exception as exc:
         understanding_error = str(exc)
         if job_id is not None:
@@ -1026,12 +1103,14 @@ def analyze_route():
 
     upload_path: Path | None = None
     try:
-        allowed_media(upload.filename, include_images=False, include_videos=True)
+        allowed_media(upload.filename, include_images=False,
+                      include_videos=True)
         conf = float(flask_request.form.get("conf", "0.25"))
         if conf < 0.01 or conf > 0.99:
             raise ValueError("Confidence must be between 0.01 and 0.99.")
         n = int(flask_request.form.get("n", "4"))
-        llm_max_batch_requests = int(flask_request.form.get("llm_max_batch_requests", str(LLM_MAX_BATCH_REQUESTS)))
+        llm_max_batch_requests = int(flask_request.form.get(
+            "llm_max_batch_requests", str(LLM_MAX_BATCH_REQUESTS)))
         if llm_max_batch_requests < 1:
             raise ValueError("LLM max batch requests must be at least 1.")
         prompt = flask_request.form.get(
@@ -1122,12 +1201,14 @@ def analyze_start():
 
     upload_path: Path | None = None
     try:
-        allowed_media(upload.filename, include_images=False, include_videos=True)
+        allowed_media(upload.filename, include_images=False,
+                      include_videos=True)
         conf = float(flask_request.form.get("conf", "0.25"))
         if conf < 0.01 or conf > 0.99:
             raise ValueError("Confidence must be between 0.01 and 0.99.")
         n = int(flask_request.form.get("n", "4"))
-        llm_max_batch_requests = int(flask_request.form.get("llm_max_batch_requests", str(LLM_MAX_BATCH_REQUESTS)))
+        llm_max_batch_requests = int(flask_request.form.get(
+            "llm_max_batch_requests", str(LLM_MAX_BATCH_REQUESTS)))
         if llm_max_batch_requests < 1:
             raise ValueError("LLM max batch requests must be at least 1.")
         prompt = flask_request.form.get(
@@ -1158,7 +1239,8 @@ def analyze_start():
 
         worker = threading.Thread(
             target=process_analysis_job,
-            args=(job_id, upload_path, conf, n, prompt, llm_max_batch_requests, source_video_url),
+            args=(job_id, upload_path, conf, n, prompt,
+                  llm_max_batch_requests, source_video_url),
             daemon=True,
         )
         worker.start()

@@ -3,351 +3,1070 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Unified Surveillance UI</title>
+  <title>Vesta · Campus watch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     :root {
+      color-scheme: light;
+      --bg: #f5f1e8;
+      --bg-gradient: linear-gradient(180deg, #faf6ed 0%, #f1ece1 60%, #ece6da 100%);
+      --panel: rgba(255, 252, 245, 0.72);
+      --panel-solid: #fffdf8;
+      --surface-card: #ffffff;
+      --surface-sunk: rgba(40, 30, 20, 0.04);
+      --surface-input: #fbfaf5;
+      --border: rgba(40, 30, 20, 0.08);
+      --border-strong: rgba(40, 30, 20, 0.16);
+      --text: #1f1a14;
+      --text-muted: rgba(31, 26, 20, 0.62);
+      --text-dim: rgba(31, 26, 20, 0.42);
+      --accent: oklch(0.66 0.13 50);
+      --accent-soft: oklch(0.66 0.13 50 / 0.12);
+      --accent-text: #fff8ef;
+      --ok: oklch(0.55 0.10 155);
+      --warn: oklch(0.65 0.16 70);
+      --danger: oklch(0.55 0.18 25);
+      --radius: 22px;
+      --radius-sm: 14px;
+      --radius-pill: 999px;
+      --blur: 24px;
+      --shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 1px 3px rgba(40,30,20,0.04), 0 14px 32px -16px rgba(40,30,20,0.16);
+      --shadow-hover: 0 1px 0 rgba(255,255,255,0.6) inset, 0 2px 4px rgba(40,30,20,0.06), 0 26px 50px -18px rgba(40,30,20,0.24);
+      --font: 'Inter Tight', Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    /* ---------- Harbor: cool quiet light ---------- */
+    [data-theme="harbor"] {
+      color-scheme: light;
+      --bg: #eef1f5;
+      --bg-gradient: linear-gradient(180deg, #f5f7fa 0%, #e7ebf2 60%, #dde2eb 100%);
+      --panel: rgba(255, 255, 255, 0.72);
+      --panel-solid: #ffffff;
+      --surface-card: #ffffff;
+      --surface-sunk: rgba(20, 30, 50, 0.04);
+      --surface-input: #f6f8fb;
+      --border: rgba(20, 30, 50, 0.08);
+      --border-strong: rgba(20, 30, 50, 0.16);
+      --text: #0d1422;
+      --text-muted: rgba(13, 20, 34, 0.62);
+      --text-dim: rgba(13, 20, 34, 0.42);
+      --accent: oklch(0.58 0.14 235);
+      --accent-soft: oklch(0.58 0.14 235 / 0.12);
+      --accent-text: #f5f9ff;
+      --ok: oklch(0.58 0.13 155);
+      --warn: oklch(0.66 0.15 70);
+      --danger: oklch(0.55 0.18 25);
+      --shadow: 0 1px 0 rgba(255,255,255,0.7) inset, 0 1px 3px rgba(20,30,50,0.04), 0 14px 32px -16px rgba(20,30,50,0.14);
+      --shadow-hover: 0 1px 0 rgba(255,255,255,0.7) inset, 0 2px 4px rgba(20,30,50,0.06), 0 26px 50px -18px rgba(20,30,50,0.22);
+    }
+
+    /* ---------- Midnight: premium dark ---------- */
+    [data-theme="midnight"] {
       color-scheme: dark;
-      --bg: #0f172a;
-      --card: #1e293b;
-      --line: #334155;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --accent: #38bdf8;
-      --danger: #f87171;
+      --bg: #0d0f14;
+      --bg-gradient: radial-gradient(120% 80% at 10% 0%, #1a1d24 0%, #0c0e13 60%, #06070a 100%);
+      --panel: rgba(28, 31, 38, 0.72);
+      --panel-solid: rgba(22, 25, 31, 0.96);
+      --surface-card: rgba(28, 31, 38, 0.85);
+      --surface-sunk: rgba(255, 255, 255, 0.03);
+      --surface-input: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #f1ede4;
+      --text-muted: rgba(241, 237, 228, 0.62);
+      --text-dim: rgba(241, 237, 228, 0.38);
+      --accent: oklch(0.80 0.11 75);
+      --accent-soft: oklch(0.80 0.11 75 / 0.16);
+      --accent-text: #1c1408;
+      --ok: oklch(0.78 0.14 155);
+      --warn: oklch(0.82 0.14 75);
+      --danger: oklch(0.74 0.18 22);
+      --shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 1px 3px rgba(0,0,0,0.4), 0 22px 50px -22px rgba(0,0,0,0.6);
+      --shadow-hover: 0 1px 0 rgba(255,255,255,0.06) inset, 0 2px 4px rgba(0,0,0,0.5), 0 32px 70px -22px rgba(0,0,0,0.7);
     }
+
     * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
     body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-      background: radial-gradient(circle at top, #172554, var(--bg) 55%);
+      font-family: var(--font);
+      background: var(--bg);
+      background-image: var(--bg-gradient);
       color: var(--text);
-      padding: 1rem;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      letter-spacing: -0.1px;
     }
-    main {
-      width: min(1200px, 100%);
-      margin: 0 auto;
-      display: grid;
-      gap: 1rem;
+
+    @keyframes sv-pulse {
+      0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+      70% { box-shadow: 0 0 0 8px transparent; opacity: 0.45; }
+      100% { box-shadow: 0 0 0 0 transparent; opacity: 1; }
     }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 1rem;
+    @keyframes sv-fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    h1, h2, h3 { margin: 0 0 0.55rem; }
-    p { margin: 0; color: var(--muted); }
-    .grid {
-      display: grid;
-      gap: 1rem;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    }
-    form { display: grid; gap: 0.7rem; margin-top: 0.8rem; }
-    input[type="file"], input[type="number"], textarea {
-      width: 100%;
-      padding: 0.65rem;
-      border-radius: 9px;
-      border: 1px solid #475569;
-      background: #0b1220;
-      color: var(--text);
-    }
-    select, input[type="text"] {
-      width: 100%;
-      padding: 0.65rem;
-      border-radius: 9px;
-      border: 1px solid #475569;
-      background: #0b1220;
-      color: var(--text);
-    }
-    button {
-      border: none;
-      border-radius: 9px;
-      padding: 0.7rem 1rem;
-      font-weight: 700;
-      background: var(--accent);
-      color: #082f49;
-      cursor: pointer;
-      width: fit-content;
-    }
-    .error { color: var(--danger); font-weight: 700; margin-top: 0.7rem; }
-    .note { color: #bfdbfe; margin-top: 0.7rem; }
-    .timer { color: #93c5fd; margin-top: 0.45rem; }
-    img, video {
-      width: 100%;
-      border-radius: 10px;
-      border: 1px solid #475569;
-      background: #020617;
-    }
-    .clips, .mosaics {
-      margin-top: 1rem;
-      display: grid;
-      gap: 0.8rem;
-    }
-    .mosaics { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-    .chip {
-      display: inline-block;
-      font-size: 0.83rem;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      border-radius: 999px;
-      padding: 0.25rem 0.6rem;
-      margin: 0.15rem 0.2rem 0 0;
-    }
-    pre {
-      white-space: pre-wrap;
-      background: #0b1220;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 0.8rem;
-      color: #cbd5e1;
-      margin: 0.7rem 0 0;
-    }
-    .progress-wrap {
-      margin-top: 0.9rem;
-      padding: 0.8rem;
-      border-radius: 10px;
-      border: 1px solid #334155;
-      background: #0b1220;
-      display: grid;
-      gap: 0.65rem;
-    }
-    .hidden {
-      display: none;
-    }
-    .btn-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.6rem;
-    }
-    .btn-danger {
-      background: #ef4444;
-      color: #fff;
-    }
-    .btn-muted {
-      background: #334155;
-      color: #e2e8f0;
-    }
-    .progress-row {
-      display: grid;
-      gap: 0.3rem;
-    }
-    .progress-head {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-      color: #cbd5e1;
-    }
-    .progress-track {
-      width: 100%;
-      height: 10px;
-      border-radius: 999px;
-      overflow: hidden;
-      background: #1e293b;
-      border: 1px solid #334155;
-      position: relative;
-    }
-    .progress-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #0ea5e9, #38bdf8);
-      transition: width 0.25s ease;
-    }
-    .progress-fill.indeterminate {
-      width: 45%;
-      animation: progress-slide 1.2s ease-in-out infinite;
+    @keyframes sv-screen-in {
+      from { opacity: 0; transform: scale(0.99) translateY(8px); filter: blur(6px); }
+      to { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
     }
     @keyframes progress-slide {
       0% { transform: translateX(-130%); }
       100% { transform: translateX(250%); }
     }
+
+    .layout { display: flex; min-height: 100vh; }
+
+    /* ---------- Side rail ---------- */
+    .rail {
+      width: 244px;
+      padding: 24px 18px;
+      border-right: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.4);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: sticky;
+      top: 0;
+      align-self: flex-start;
+      height: 100vh;
+    }
+    [data-theme="midnight"] .rail { background: rgba(255,255,255,0.02); }
+
+    /* ---------- Theme switcher ---------- */
+    .theme-block {
+      padding: 12px 12px 14px;
+      border-radius: 14px;
+      background: var(--surface-sunk);
+      margin-bottom: 10px;
+    }
+    .theme-label {
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      margin-bottom: 8px;
+    }
+    .theme-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      background: var(--bg);
+      padding: 3px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .theme-btn {
+      position: relative;
+      padding: 6px 0;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: -0.05px;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: background .15s, color .15s;
+      text-align: center;
+    }
+    .theme-btn:hover { color: var(--text); }
+    .theme-btn.active {
+      background: var(--surface-card);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    }
+    .theme-btn[data-mode="auto"] { position: relative; }
+    .theme-tip {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      background: var(--text);
+      color: var(--bg);
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      line-height: 1.45;
+      font-family: var(--font);
+      letter-spacing: 0;
+      white-space: nowrap;
+      box-shadow: 0 8px 24px -8px rgba(0,0,0,0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .15s ease, transform .15s ease;
+      z-index: 30;
+    }
+    .theme-tip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 18px;
+      border: 5px solid transparent;
+      border-top-color: var(--text);
+    }
+    .theme-btn[data-mode="auto"]:hover .theme-tip,
+    .theme-btn[data-mode="auto"]:focus-visible .theme-tip {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+    .theme-tip-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.2px;
+    }
+    .theme-tip-row .when { opacity: 0.6; }
+    .theme-tip-now {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      font-size: 10.5px;
+      opacity: 0.85;
+    }
+    [data-theme="midnight"] .theme-tip {
+      background: var(--surface-card);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+    }
+    [data-theme="midnight"] .theme-tip::after { border-top-color: var(--surface-card); }
+    [data-theme="midnight"] .theme-tip-now { border-top-color: var(--border); }
+    .rail-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 10px 18px;
+    }
+    .rail-mark {
+      width: 32px; height: 32px; border-radius: 10px;
+      background: var(--accent); color: var(--accent-text);
+      display: inline-flex; align-items: center; justify-content: center;
+      box-shadow: var(--shadow);
+    }
+    .rail-name { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; color: var(--text); }
+    .rail-sub  { font-size: 11.5px; color: var(--text-dim); }
+    .rail-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 14px;
+      border-radius: 14px;
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid transparent;
+      cursor: pointer;
+      font: 500 14px/1 var(--font);
+      letter-spacing: -0.1px;
+      transition: background .15s, color .15s, border-color .15s;
+      text-align: left;
+      width: 100%;
+    }
+    .rail-item:hover { background: var(--surface-sunk); color: var(--text); }
+    .rail-item.active {
+      background: var(--surface-card);
+      color: var(--text);
+      border-color: var(--border);
+      box-shadow: var(--shadow);
+    }
+    .rail-item.active .rail-ico { color: var(--accent); }
+    .rail-ico { display: inline-flex; color: currentColor; }
+    .rail-spacer { flex: 1; }
+    .rail-calm {
+      padding: 14px 12px;
+      border-radius: 14px;
+      background: var(--accent-soft);
+    }
+    .rail-calm-head {
+      font-size: 12px; font-weight: 500; color: var(--accent); letter-spacing: 0.1px;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .rail-calm-body {
+      font-size: 12.5px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;
+      text-wrap: pretty;
+    }
+
+    /* ---------- Shell ---------- */
+    .shell { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .topbar {
+      display: flex; align-items: center; gap: 14px;
+      padding: 18px 36px 16px;
+    }
+    .topbar-eyebrow {
+      font-size: 11.5px; color: var(--text-dim); letter-spacing: 0.4px; font-weight: 500;
+      text-transform: uppercase;
+    }
+    .topbar-sub { font-size: 14px; color: var(--text-muted); margin-top: 2px; }
+    .topbar-right { display: flex; align-items: center; gap: 8px; }
+    .topbar-search {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 14px;
+      background: var(--surface-sunk);
+      border-radius: var(--radius-pill);
+      font-size: 13px; color: var(--text-muted);
+      min-width: 220px;
+    }
+    .topbar-search .kbd {
+      margin-left: auto; font-size: 11px; color: var(--text-dim);
+      font-family: var(--mono);
+    }
+    .topbar-icon-btn {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--surface-sunk); color: var(--text-muted);
+      border: none; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    .topbar-bell-dot {
+      position: absolute; top: 9px; right: 11px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--warn); border: 1.5px solid var(--bg);
+    }
+    .topbar-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--accent-soft); color: var(--accent);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600; letter-spacing: 0.1px;
+    }
+
+    main {
+      flex: 1; min-height: 0;
+      padding: 16px 36px 56px;
+      overflow-y: auto;
+    }
+    .screen { display: none; max-width: 1200px; margin: 0 auto; width: 100%; }
+    .screen.active { display: flex; flex-direction: column; gap: 32px; animation: sv-screen-in .4s cubic-bezier(.2,.7,.3,1) both; }
+
+    /* ---------- Greeting ---------- */
+    .greet { padding-top: 12px; }
+    .greet-date { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.1px; }
+    .greet-title {
+      margin: 0; font-size: 44px; font-weight: 500; letter-spacing: -1.2px;
+      line-height: 1.05; color: var(--text);
+      text-wrap: balance;
+    }
+    .greet-body {
+      font-size: 20px; color: var(--text-muted); margin-top: 10px;
+      letter-spacing: -0.3px; line-height: 1.4; max-width: 740px;
+      text-wrap: pretty;
+    }
+
+    /* ---------- Cards ---------- */
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      transition: transform .25s cubic-bezier(.2,.7,.3,1), box-shadow .25s;
+    }
+    .card.padded { padding: 24px; }
+    .card.padded-sm { padding: 18px 20px; }
+    .card.hoverable { cursor: pointer; }
+    .card.hoverable:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+
+    /* ---------- Stat grid ---------- */
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    }
+    .stat-k { font-size: 12.5px; color: var(--text-muted); letter-spacing: 0.1px; font-weight: 500; }
+    .stat-v {
+      font-size: 38px; font-weight: 500; letter-spacing: -1px; margin-top: 8px;
+      color: var(--text);
+    }
+    .stat-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+
+    /* ---------- Section label ---------- */
+    .section-label {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    }
+    .section-label .lhs {
+      font-size: 13px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.1px;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .section-label .lhs.accent { color: var(--accent); }
+    .section-stack { display: flex; flex-direction: column; gap: 14px; }
+
+    /* ---------- Soft buttons ---------- */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 9px 16px;
+      font-size: 13px; font-weight: 500; letter-spacing: -0.1px;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      font-family: var(--font);
+      transition: background .15s, transform .15s, color .15s;
+    }
+    .btn:hover { background: var(--surface-sunk); }
+    .btn.primary {
+      background: var(--accent); color: var(--accent-text); border-color: transparent;
+    }
+    .btn.primary:hover { transform: scale(1.02); background: var(--accent); }
+    .btn.ghost { border-color: transparent; color: var(--text-muted); }
+    .btn.ghost:hover { background: var(--surface-sunk); color: var(--text); }
+    .btn.sm { padding: 6px 12px; font-size: 12px; }
+    .btn.lg { padding: 12px 22px; font-size: 15px; }
+    .btn.danger { background: var(--danger); color: #fff8f5; border-color: transparent; }
+    .btn.danger:hover { background: var(--danger); transform: scale(1.02); }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .btn:disabled, .btn[disabled] { opacity: 0.55; cursor: not-allowed; transform: none !important; }
+
+    /* ---------- Forms ---------- */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-size: 12px; color: var(--text-muted); font-weight: 500;
+      letter-spacing: 0.4px; text-transform: uppercase;
+    }
+    .field input[type="text"],
+    .field input[type="number"],
+    .field input[type="file"],
+    .field select,
+    .field textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-input);
+      color: var(--text);
+      font: 400 13.5px/1.4 var(--font);
+      transition: border-color .15s, background .15s;
+    }
+    .field textarea { min-height: 92px; resize: vertical; line-height: 1.55; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: none; border-color: var(--accent); background: #fff;
+    }
+    .form-grid {
+      display: grid; gap: 14px;
+      grid-template-columns: 1fr 1fr;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    @media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } }
+
+    /* ---------- Chips ---------- */
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 11.5px; font-weight: 500; letter-spacing: 0.1px;
+      background: var(--surface-sunk);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .chip.accent { background: var(--accent-soft); color: var(--accent); }
+    .chip.mono { font-family: var(--mono); font-size: 11px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* ---------- Live feed ---------- */
+    .live-frame {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border-radius: var(--radius);
+      background: #14110d;
+      box-shadow: inset 0 0 0 1px var(--border);
+    }
+    .live-frame img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+      background: #14110d;
+    }
+    .live-overlay-top {
+      position: absolute; top: 16px; left: 16px;
+      display: flex; gap: 8px; pointer-events: none;
+    }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.92); color: #111;
+      font-size: 12px; font-weight: 500;
+    }
+    .live-pill.dark {
+      background: rgba(0,0,0,0.45); color: #fff;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    .live-dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--ok);
+    }
+    .live-dot.pulse { animation: sv-pulse 2s ease-out infinite; color: var(--ok); }
+    .live-dot.quiet { background: #9aa1ad; }
+
+    /* ---------- Disclosure ---------- */
+    .disclose {
+      border-top: 1px solid var(--border);
+      margin-top: 16px; padding-top: 12px;
+    }
+    .disclose-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 10px; margin-left: -10px;
+      background: transparent; border: none;
+      color: var(--text-muted); cursor: pointer;
+      font: 500 12.5px/1 var(--font); letter-spacing: -0.1px;
+      border-radius: var(--radius-pill);
+    }
+    .disclose-btn:hover { color: var(--text); }
+    .disclose-chev {
+      display: inline-flex; transition: transform .2s;
+    }
+    .disclose[open] .disclose-chev { transform: rotate(90deg); }
+    .disclose-body {
+      margin-top: 6px; padding: 14px;
+      background: var(--surface-sunk);
+      border-radius: 12px;
+      font-family: var(--mono);
+      font-size: 11.5px; color: var(--text-muted);
+      line-height: 1.7; letter-spacing: 0.2px;
+      animation: sv-fade-in .2s ease both;
+    }
+    .kv { display: grid; grid-template-columns: auto 1fr; column-gap: 18px; row-gap: 4px; }
+    .kv .k { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; font-size: 10px; }
+    .kv .v { color: var(--text); word-break: break-word; }
+
+    /* ---------- Progress ---------- */
+    .progress-wrap {
+      margin-top: 16px;
+      padding: 16px 18px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-sunk);
+      display: grid; gap: 12px;
+    }
+    .progress-row { display: grid; gap: 6px; }
+    .progress-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 12.5px; color: var(--text-muted);
+    }
+    .progress-head .name { color: var(--text); font-weight: 500; }
+    .progress-track {
+      width: 100%; height: 6px;
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      background: rgba(40,30,20,0.08);
+      position: relative;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: var(--accent);
+      transition: width 0.25s ease;
+      border-radius: var(--radius-pill);
+    }
+    .progress-fill.indeterminate {
+      width: 45%;
+      animation: progress-slide 1.2s ease-in-out infinite;
+    }
+
+    /* ---------- Status / notes ---------- */
+    .note { font-size: 13.5px; color: var(--text-muted); line-height: 1.55; text-wrap: pretty; }
+    .timer { font-size: 12.5px; color: var(--accent); margin-top: 6px; font-family: var(--mono); }
+    .error {
+      color: var(--danger); font-weight: 500;
+      background: oklch(0.55 0.18 25 / 0.08);
+      padding: 10px 14px; border-radius: 12px;
+      margin-top: 10px; font-size: 13.5px;
+    }
+    .hidden { display: none !important; }
+
+    /* ---------- Clips / mosaics ---------- */
+    .clip-list { display: grid; gap: 16px; margin-top: 14px; }
+    .clip-meta {
+      font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px;
+      font-family: var(--mono);
+    }
+    video, .clip-list img {
+      width: 100%; border-radius: 14px;
+      border: 1px solid var(--border);
+      background: #14110d;
+      display: block;
+    }
+    .mosaics {
+      display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 14px;
+    }
+    .mosaics figure { margin: 0; }
+    .mosaics figcaption {
+      font-size: 11.5px; color: var(--text-muted);
+      font-family: var(--mono); margin-top: 6px;
+      text-align: center;
+    }
+    pre {
+      white-space: pre-wrap; word-break: break-word;
+      background: var(--surface-sunk);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: var(--text);
+      margin: 10px 0 0;
+      font: 400 12.5px/1.65 var(--mono);
+      letter-spacing: 0.1px;
+    }
+
+    /* ---------- Headings inside cards ---------- */
+    h1, h2, h3 { margin: 0; font-weight: 500; color: var(--text); letter-spacing: -0.5px; text-wrap: balance; }
+    h2 { font-size: 22px; }
+    h3 { font-size: 16px; margin-bottom: 6px; }
+
+    .screen-head { padding-top: 8px; }
+    .screen-eyebrow { font-size: 13px; color: var(--text-muted); letter-spacing: 0.1px; font-weight: 500; }
+    .screen-title { font-size: 36px; font-weight: 500; letter-spacing: -0.8px; margin-top: 6px; }
+    .screen-body { font-size: 15px; color: var(--text-muted); margin-top: 8px; max-width: 680px; line-height: 1.5; }
+
+    /* ---------- Scrollbar ---------- */
+    main::-webkit-scrollbar { width: 10px; }
+    main::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.12); border-radius: 999px;
+      border: 3px solid transparent; background-clip: content-box;
+    }
+    main::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(0,0,0,0.22); background-clip: content-box;
+    }
+
+    @media (max-width: 900px) {
+      .rail { display: none; }
+      main { padding: 16px 20px 40px; }
+      .topbar { padding: 16px 20px; }
+      .greet-title { font-size: 34px; }
+      .greet-body { font-size: 17px; }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
   </style>
 </head>
 <body>
-  <main>
-    <section class="card">
-      <h1>Unified Surveillance UI</h1>
-      <p>One Flask app for person detection and video understanding via llama.cpp.</p>
-      <div style="margin-top:0.6rem;">
-        <span class="chip">model={{ runtime.model }}</span>
-        <span class="chip">device={{ runtime.device }}</span>
-        <span class="chip">precision={{ runtime.precision }}</span>
-        <span class="chip">policy={{ runtime.policy }}</span>
-        <span class="chip">batch={{ runtime.video_batch_size }}</span>
-        <span class="chip">llm-batch={{ runtime.llm_max_batch_requests }}</span>
-        <span class="chip">llama={{ llamacpp_endpoint }}</span>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Single Video Analysis</h2>
-      <p>Choose a source video (uploaded or recorded) and run person detection + video understanding together.</p>
-
-      <form id="analyze-form" action="/analyze" method="post" enctype="multipart/form-data">
-        <label for="analysis_source">Analysis source</label>
-        <select id="analysis_source" name="analysis_source">
-          <option value="upload">Uploaded video</option>
-          <option value="recorded">Recorded video</option>
-        </select>
-        <label for="recorded_video">Recorded videos</label>
-        <select id="recorded_video" name="recorded_video">
-          <option value="">Select recorded video</option>
-          {% for item in recorded_videos %}
-            <option value="{{ item.name }}">{{ item.name }} ({{ item.size_mb }} MB)</option>
-          {% endfor %}
-        </select>
-        <label for="video_upload">Upload video</label>
-        <input id="video_upload" type="file" name="video" accept="video/*" />
-        <label for="conf">Detection confidence (0.01 - 0.99)</label>
-        <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
-        <label for="n">n (mosaic side)</label>
-        <input id="n" type="number" name="n" min="1" max="20" step="1" value="4" />
-        <label for="llm_max_batch_requests">LLM max batch requests</label>
-        <input id="llm_max_batch_requests" type="number" name="llm_max_batch_requests" min="1" max="64" step="1" value="{{ runtime.llm_max_batch_requests }}" />
-        <label for="prompt">Prompt</label>
-        <textarea id="prompt" name="prompt" rows="4">Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.</textarea>
-        <button type="submit">Run Unified Analysis</button>
-      </form>
-      <div id="progress-wrap" class="progress-wrap hidden" aria-live="polite">
-        <div class="progress-row">
-          <div class="progress-head">
-            <span id="upload-label">Upload</span>
-            <span id="upload-value">0%</span>
-          </div>
-          <div class="progress-track"><div id="upload-fill" class="progress-fill"></div></div>
+  <div class="layout">
+    <!-- ============================= SIDE RAIL ============================= -->
+    <nav class="rail" aria-label="Primary">
+      <div class="rail-brand">
+        <div class="rail-mark">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>
         </div>
-        <div class="progress-row">
-          <div class="progress-head">
-            <span id="detect-label">Person detection</span>
-            <span id="detect-value">waiting</span>
-          </div>
-          <div class="progress-track"><div id="detect-fill" class="progress-fill"></div></div>
-        </div>
-        <div class="progress-row">
-          <div class="progress-head">
-            <span id="understand-label">Video understanding</span>
-            <span id="understand-value">waiting</span>
-          </div>
-          <div class="progress-track"><div id="understand-fill" class="progress-fill"></div></div>
+        <div>
+          <div class="rail-name">Vesta</div>
+          <div class="rail-sub">Campus watch</div>
         </div>
       </div>
 
-      {% if overall_error %}
-        <div class="error">{{ overall_error }}</div>
-      {% endif %}
+      <button class="rail-item active" data-screen="home">
+        <span class="rail-ico"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8 9 2.5 15.5 8v6.5a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V8z"/><path d="M7 15.5v-4h4v4"/></svg></span>
+        Home
+      </button>
+      <button class="rail-item" data-screen="live">
+        <span class="rail-ico"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="2.5" width="6" height="6" rx="1.4"/><rect x="9.5" y="2.5" width="6" height="6" rx="1.4"/><rect x="2.5" y="9.5" width="6" height="6" rx="1.4"/><rect x="9.5" y="9.5" width="6" height="6" rx="1.4"/></svg></span>
+        Live
+      </button>
+      <button class="rail-item" data-screen="analyze">
+        <span class="rail-ico"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 9h2l2-5 4 10 2-5h4"/></svg></span>
+        Analysis
+      </button>
 
-      {% if overall_processing_seconds is not none %}
-        <div class="timer">Total processing: {{ overall_processing_seconds }}s</div>
-      {% endif %}
+      <div class="rail-spacer"></div>
 
-      {% if source_video_url %}
-        <div class="clips">
-          <h3>Source Video</h3>
-          <video controls preload="metadata">
-            <source src="{{ source_video_url }}" type="video/mp4" />
-          </video>
+      <div class="theme-block">
+        <div class="theme-label">Theme</div>
+        <div class="theme-row" role="group" aria-label="Theme">
+          <button type="button" class="theme-btn active" data-mode="auto" aria-label="Auto theme (schedule)">
+            Auto
+            <span class="theme-tip" role="tooltip">
+              <div class="theme-tip-row"><span>Vesta</span><span class="when">5 AM – 11 AM</span></div>
+              <div class="theme-tip-row"><span>Harbor</span><span class="when">11 AM – 3 PM</span></div>
+              <div class="theme-tip-row"><span>Vesta</span><span class="when">3 PM – 7 PM</span></div>
+              <div class="theme-tip-row"><span>Midnight</span><span class="when">7 PM – 5 AM</span></div>
+              <div class="theme-tip-now" id="theme-tip-now">Now · Vesta</div>
+            </span>
+          </button>
+          <button type="button" class="theme-btn" data-mode="vesta">Vesta</button>
+          <button type="button" class="theme-btn" data-mode="harbor">Harbor</button>
+          <button type="button" class="theme-btn" data-mode="midnight">Dark</button>
         </div>
-      {% endif %}
-    </section>
+      </div>
 
-    <section class="card">
-      <h2>Live RTSP Monitor + YOLO</h2>
-      <p>Default stream: {{ live_rtsp_default }}. Live frames are annotated with YOLO person detection.</p>
-      <form id="live-form" onsubmit="return false;">
-        <label for="live_rtsp_url">RTSP URL</label>
-        <input id="live_rtsp_url" type="text" value="{{ live_rtsp_default }}" />
-        <div class="btn-row">
-          <button id="live_discover_btn" type="button" class="btn-muted">Discover Streams</button>
-          <button id="live_start_btn" type="button">Start Live</button>
-          <button id="live_stop_btn" type="button" class="btn-muted">Stop Live</button>
-          <button id="record_start_btn" type="button">Start Recording</button>
-          <button id="record_stop_btn" type="button" class="btn-danger">Stop Recording</button>
+      <div class="rail-calm">
+        <div class="rail-calm-head">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v3M7 9v3M2 7h3M9 7h3M3.8 3.8l1.8 1.8M8.4 8.4l1.8 1.8M3.8 10.2l1.8-1.8M8.4 5.6l1.8-1.8"/></svg>
+          Calm right now
         </div>
-      </form>
-      <p id="live_status_text" class="note" style="margin-top:0.75rem;">Idle</p>
-      <select id="live_stream_select" style="margin-top:0.75rem;">
-        <option value="">Discovered streams will appear here</option>
-      </select>
-      <img id="live_feed_img" src="/live/feed" alt="Live detection stream" style="margin-top:0.8rem;" />
-    </section>
+        <div class="rail-calm-body">We'll only interrupt you if something genuinely needs your attention.</div>
+      </div>
+    </nav>
 
-    <section class="grid">
-      <article class="card">
-        <h2>Person Detection Output</h2>
+    <!-- ============================= SHELL ============================= -->
+    <div class="shell">
+      <header class="topbar">
+        <div style="flex:1; min-width:0;">
+          <div class="topbar-eyebrow" id="topbar-eyebrow">Vesta · Warm light</div>
+          <div class="topbar-sub" id="topbar-sub">Today's digest</div>
+        </div>
+      </header>
 
-        {% if detect_error %}
-          <div class="error">{{ detect_error }}</div>
-        {% endif %}
+      <main>
+        <!-- ====================== HOME SCREEN ====================== -->
+        <section class="screen active" data-screen="home">
+          <div class="greet">
+            <div class="greet-date" id="greet-date">Loading…</div>
+            <h1 class="greet-title">Good morning.</h1>
+            <p class="greet-body">Campus is calm. A few things might be worth a glance, and the rest is running quietly in the background.</p>
+          </div>
 
-        {% if detect_processing_seconds is not none %}
-          <div class="timer">Processing: {{ detect_processing_seconds }}s</div>
-        {% endif %}
+          <div class="stat-grid">
+            <div class="card padded">
+              <div class="stat-k">Live status</div>
+              <div class="stat-v" id="stat-live">—</div>
+              <div class="stat-sub" id="stat-live-sub">RTSP feed</div>
+            </div>
+            <div class="card padded">
+              <div class="stat-k">Recordings</div>
+              <div class="stat-v" id="stat-recordings">{{ recorded_videos|length }}</div>
+              <div class="stat-sub">saved clips</div>
+            </div>
+            <div class="card padded">
+              <div class="stat-k">Detection batch</div>
+              <div class="stat-v">{{ runtime.video_batch_size }}</div>
+              <div class="stat-sub">{{ runtime.device }} · {{ runtime.precision }}</div>
+            </div>
+            <div class="card padded">
+              <div class="stat-k">LLM batch</div>
+              <div class="stat-v">{{ runtime.llm_max_batch_requests }}</div>
+              <div class="stat-sub">parallel requests</div>
+            </div>
+          </div>
 
-        {% if detect_result_note %}
-          <div class="note">{{ detect_result_note }}</div>
-        {% endif %}
+          <div class="section-stack">
+            <div class="section-label">
+              <span class="lhs accent">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v3M7 9v3M2 7h3M9 7h3M3.8 3.8l1.8 1.8M8.4 8.4l1.8 1.8M3.8 10.2l1.8-1.8M8.4 5.6l1.8-1.8"/></svg>
+                What you can do here
+              </span>
+            </div>
+            <div class="card padded" style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
+              <div style="padding-right:12px; border-right:1px solid var(--border);">
+                <h3>Watch the campus, live</h3>
+                <p class="note">Stream the RTSP feed with YOLO person detection drawn on top. Discover stream sub-paths, start and stop the feed, and record clips for later.</p>
+                <div class="btn-row" style="margin-top:14px;">
+                  <button class="btn primary" data-go="live">Open Live</button>
+                  <button class="btn ghost" data-go="live">Recordings →</button>
+                </div>
+              </div>
+              <div>
+                <h3>Understand a video</h3>
+                <p class="note">Run person detection and an LLM-based understanding pass on an uploaded or recorded video. Generates clips, mosaics, captions, and a threat score.</p>
+                <div class="btn-row" style="margin-top:14px;">
+                  <button class="btn primary" data-go="analyze">Run analysis</button>
+                </div>
+              </div>
+            </div>
 
-        {% if clip_results %}
-          <div class="clips">
-            {% for clip in clip_results %}
-              <article>
-                <p>Clip {{ clip.index }} | {{ clip.start_label }} -> {{ clip.end_label }} ({{ clip.duration_s }}s)</p>
+            <details class="card padded disclose" style="margin-top:0; border-top:none; padding-top:14px;">
+              <summary class="disclose-btn" style="list-style:none;">
+                <span class="disclose-chev"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l4 4-4 4"/></svg></span>
+                Show technical details
+              </summary>
+              <div class="disclose-body" style="margin-top:10px;">
+                <div class="kv">
+                  <div class="k">Model</div><div class="v">{{ runtime.model }}</div>
+                  <div class="k">Device</div><div class="v">{{ runtime.device }}</div>
+                  <div class="k">Precision</div><div class="v">{{ runtime.precision }}</div>
+                  <div class="k">Policy</div><div class="v">{{ runtime.policy }}</div>
+                  <div class="k">Video batch</div><div class="v">{{ runtime.video_batch_size }}</div>
+                  <div class="k">LLM batch</div><div class="v">{{ runtime.llm_max_batch_requests }}</div>
+                  <div class="k">llama.cpp</div><div class="v">{{ llamacpp_endpoint }}</div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <!-- ====================== LIVE SCREEN ====================== -->
+        <section class="screen" data-screen="live">
+          <header class="screen-head">
+            <div class="screen-eyebrow">Live · everywhere</div>
+            <h1 class="screen-title">Spaces</h1>
+            <p class="screen-body">A live look at the campus feed. Discover stream paths, start the watch, and record clips for later review.</p>
+          </header>
+
+          <div class="card padded">
+            <div class="live-frame">
+              <img id="live_feed_img" src="/live/feed" alt="Live detection stream" />
+              <div class="live-overlay-top">
+                <span class="live-pill" id="live_overlay_state">
+                  <span class="live-dot pulse" id="live_overlay_dot"></span>
+                  <span id="live_overlay_label">Live now</span>
+                </span>
+                <span class="live-pill dark" id="live_overlay_code">RTSP</span>
+              </div>
+            </div>
+
+            <div style="margin-top:18px; display:flex; flex-direction:column; gap:14px;">
+              <div class="field">
+                <label for="live_rtsp_url">RTSP URL</label>
+                <input id="live_rtsp_url" type="text" value="{{ live_rtsp_default }}" />
+              </div>
+              <div class="field">
+                <label for="live_stream_select">Discovered streams</label>
+                <select id="live_stream_select">
+                  <option value="">Discovered streams will appear here</option>
+                </select>
+              </div>
+              <div class="btn-row">
+                <button id="live_start_btn" type="button" class="btn primary">Start Live</button>
+                <button id="live_stop_btn" type="button" class="btn">Stop Live</button>
+                <button id="live_discover_btn" type="button" class="btn">Discover Streams</button>
+                <button id="record_start_btn" type="button" class="btn">Start Recording</button>
+                <button id="record_stop_btn" type="button" class="btn danger">Stop Recording</button>
+              </div>
+              <p id="live_status_text" class="note">Idle</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================== ANALYSIS SCREEN ====================== -->
+        <section class="screen" data-screen="analyze">
+          <header class="screen-head">
+            <div class="screen-eyebrow">Single video understanding</div>
+            <h1 class="screen-title">Analysis</h1>
+            <p class="screen-body">Pick an uploaded or recorded video and we'll find people, build mosaics, caption them, and write a final understanding with a threat score.</p>
+          </header>
+
+          <div class="card padded">
+            <form id="analyze-form" action="/analyze" method="post" enctype="multipart/form-data">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="analysis_source">Source</label>
+                  <select id="analysis_source" name="analysis_source">
+                    <option value="upload">Uploaded video</option>
+                    <option value="recorded">Recorded video</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="recorded_video">Recorded videos</label>
+                  <select id="recorded_video" name="recorded_video">
+                    <option value="">Select recorded video</option>
+                    {% for item in recorded_videos %}
+                      <option value="{{ item.name }}">{{ item.name }} ({{ item.size_mb }} MB)</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="video_upload">Upload video</label>
+                  <input id="video_upload" type="file" name="video" accept="video/*" />
+                </div>
+                <div class="field">
+                  <label for="conf">Detection confidence</label>
+                  <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
+                </div>
+                <div class="field">
+                  <label for="n">Mosaic side (n)</label>
+                  <input id="n" type="number" name="n" min="1" max="20" step="1" value="4" />
+                </div>
+                <div class="field">
+                  <label for="llm_max_batch_requests">LLM max batch requests</label>
+                  <input id="llm_max_batch_requests" type="number" name="llm_max_batch_requests" min="1" max="64" step="1" value="{{ runtime.llm_max_batch_requests }}" />
+                </div>
+                <div class="field full">
+                  <label for="prompt">Prompt</label>
+                  <textarea id="prompt" name="prompt" rows="4">Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.</textarea>
+                </div>
+                <div class="full">
+                  <button type="submit" class="btn primary lg">Run unified analysis</button>
+                </div>
+              </div>
+            </form>
+
+            <div id="progress-wrap" class="progress-wrap hidden" aria-live="polite">
+              <div class="progress-row">
+                <div class="progress-head">
+                  <span class="name" id="upload-label">Upload</span>
+                  <span id="upload-value">0%</span>
+                </div>
+                <div class="progress-track"><div id="upload-fill" class="progress-fill"></div></div>
+              </div>
+              <div class="progress-row">
+                <div class="progress-head">
+                  <span class="name" id="detect-label">Person detection</span>
+                  <span id="detect-value">waiting</span>
+                </div>
+                <div class="progress-track"><div id="detect-fill" class="progress-fill"></div></div>
+              </div>
+              <div class="progress-row">
+                <div class="progress-head">
+                  <span class="name" id="understand-label">Video understanding</span>
+                  <span id="understand-value">waiting</span>
+                </div>
+                <div class="progress-track"><div id="understand-fill" class="progress-fill"></div></div>
+              </div>
+            </div>
+
+            {% if overall_error %}
+              <div class="error">{{ overall_error }}</div>
+            {% endif %}
+
+            {% if overall_processing_seconds is not none %}
+              <div class="timer">Total processing · {{ overall_processing_seconds }}s</div>
+            {% endif %}
+
+            {% if source_video_url %}
+              <div style="margin-top:18px;">
+                <h3>Source video</h3>
                 <video controls preload="metadata">
-                  <source src="{{ clip.url }}" type="video/mp4" />
+                  <source src="{{ source_video_url }}" type="video/mp4" />
                 </video>
-              </article>
-            {% endfor %}
+              </div>
+            {% endif %}
           </div>
-        {% endif %}
-      </article>
 
-      <article class="card">
-        <h2>Video Understanding Output</h2>
+          {% if clip_results or detect_error or detect_processing_seconds is not none or detect_result_note or understanding_gallery or understanding_summary or threat_score is not none %}
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+            <article class="card padded">
+              <div class="section-label"><span class="lhs">Person detection</span></div>
+              {% if detect_error %}<div class="error">{{ detect_error }}</div>{% endif %}
+              {% if detect_processing_seconds is not none %}<div class="timer">Processing · {{ detect_processing_seconds }}s</div>{% endif %}
+              {% if detect_result_note %}<p class="note" style="margin-top:8px;">{{ detect_result_note }}</p>{% endif %}
 
-        {% if understanding_error %}
-          <div class="error">{{ understanding_error }}</div>
-        {% endif %}
+              {% if clip_results %}
+                <div class="clip-list">
+                  {% for clip in clip_results %}
+                    <div>
+                      <div class="clip-meta">Clip {{ clip.index }} · {{ clip.start_label }} → {{ clip.end_label }} ({{ clip.duration_s }}s)</div>
+                      <video controls preload="metadata">
+                        <source src="{{ clip.url }}" type="video/mp4" />
+                      </video>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </article>
 
-        {% if understanding_processing_seconds is not none %}
-          <div class="timer">Processing: {{ understanding_processing_seconds }}s</div>
-        {% endif %}
-        {% if understanding_stats %}
-          <div class="note">{{ understanding_stats }}</div>
-        {% endif %}
+            <article class="card padded">
+              <div class="section-label"><span class="lhs">Video understanding</span></div>
+              {% if understanding_error %}<div class="error">{{ understanding_error }}</div>{% endif %}
+              {% if understanding_processing_seconds is not none %}<div class="timer">Processing · {{ understanding_processing_seconds }}s</div>{% endif %}
+              {% if understanding_stats %}<p class="note" style="margin-top:8px;">{{ understanding_stats }}</p>{% endif %}
 
-        {% if understanding_gallery %}
-          <h3 style="margin-top:0.9rem;">Mosaics</h3>
-          <div class="mosaics">
-            {% for item in understanding_gallery %}
-              <figure style="margin:0;">
-                <img src="{{ item.src }}" alt="{{ item.label }}" />
-                <figcaption style="font-size:0.85rem;color:#cbd5e1;">{{ item.label }}</figcaption>
-              </figure>
-            {% endfor %}
+              {% if understanding_gallery %}
+                <h3 style="margin-top:18px;">Mosaics</h3>
+                <div class="mosaics">
+                  {% for item in understanding_gallery %}
+                    <figure>
+                      <img src="{{ item.src }}" alt="{{ item.label }}" />
+                      <figcaption>{{ item.label }}</figcaption>
+                    </figure>
+                  {% endfor %}
+                </div>
+              {% endif %}
+
+              {% if understanding_captions %}
+                <h3 style="margin-top:18px;">Mosaic captions</h3>
+                <pre>{{ understanding_captions }}</pre>
+              {% endif %}
+
+              {% if understanding_summary %}
+                <h3 style="margin-top:18px;">Final understanding</h3>
+                <pre>{{ understanding_summary }}</pre>
+              {% endif %}
+
+              {% if threat_score is not none %}
+                <h3 style="margin-top:18px;">Threat assessment</h3>
+                <p class="note" style="font-size:15px;">Threat score · <strong style="color:var(--text);">{{ threat_score }}/100</strong></p>
+              {% endif %}
+              {% if threat_assessment %}<pre>{{ threat_assessment }}</pre>{% endif %}
+            </article>
           </div>
-        {% endif %}
+          {% endif %}
+        </section>
+      </main>
+    </div>
+  </div>
 
-        {% if understanding_captions %}
-          <h3 style="margin-top:0.9rem;">Mosaic Captions</h3>
-          <pre>{{ understanding_captions }}</pre>
-        {% endif %}
-
-        {% if understanding_summary %}
-          <h3 style="margin-top:0.9rem;">Final Understanding</h3>
-          <pre>{{ understanding_summary }}</pre>
-        {% endif %}
-
-        {% if threat_score is not none %}
-          <h3 style="margin-top:0.9rem;">Threat Assessment</h3>
-          <p class="note" style="font-size:1.05rem;">Threat score: <strong>{{ threat_score }}/100</strong></p>
-        {% endif %}
-        {% if threat_assessment %}
-          <pre>{{ threat_assessment }}</pre>
-        {% endif %}
-      </article>
-    </section>
-  </main>
   <script>
     (function () {
+      // ---------- Theme switcher ----------
+      const THEME_KEY = 'vesta-theme-mode';
+      const THEMES = ['vesta', 'harbor', 'midnight'];
+      function autoThemeFor(date) {
+        const h = date.getHours();
+        if (h < 5) return 'midnight';
+        if (h < 11) return 'vesta';
+        if (h < 15) return 'harbor';
+        if (h < 19) return 'vesta';
+        return 'midnight';
+      }
+      function applyTheme(themeName) {
+        document.documentElement.setAttribute('data-theme', themeName);
+      }
+      const themeBtns = Array.from(document.querySelectorAll('.theme-btn'));
+      const tipNow = document.getElementById('theme-tip-now');
+      let themeMode = (function () {
+        try {
+          const stored = localStorage.getItem(THEME_KEY);
+          if (stored === 'auto' || THEMES.includes(stored)) return stored;
+        } catch (_e) {}
+        return 'auto';
+      })();
+      function refreshTheme() {
+        const effective = themeMode === 'auto' ? autoThemeFor(new Date()) : themeMode;
+        applyTheme(effective);
+        themeBtns.forEach((b) => b.classList.toggle('active', b.dataset.mode === themeMode));
+        if (tipNow) {
+          const label = effective.charAt(0).toUpperCase() + effective.slice(1);
+          tipNow.textContent = 'Now · ' + label;
+        }
+      }
+      themeBtns.forEach((b) => {
+        b.addEventListener('click', () => {
+          themeMode = b.dataset.mode;
+          try { localStorage.setItem(THEME_KEY, themeMode); } catch (_e) {}
+          refreshTheme();
+        });
+      });
+      refreshTheme();
+      setInterval(() => { if (themeMode === 'auto') refreshTheme(); }, 60000);
+
+      // ---------- Greeting date ----------
+      try {
+        const now = new Date();
+        const hour = now.getHours();
+        const period = hour < 12 ? 'morning' : (hour < 18 ? 'afternoon' : 'evening');
+        const greetEl = document.querySelector('.greet-title');
+        if (greetEl) greetEl.textContent = `Good ${period}.`;
+        const dateOpts = { weekday: 'long', month: 'long', day: 'numeric' };
+        const timeOpts = { hour: 'numeric', minute: '2-digit' };
+        const dateStr = now.toLocaleDateString(undefined, dateOpts);
+        const timeStr = now.toLocaleTimeString(undefined, timeOpts);
+        const greetDate = document.getElementById('greet-date');
+        if (greetDate) greetDate.textContent = `${dateStr} · ${timeStr}`;
+      } catch (_e) { /* noop */ }
+
+      // ---------- Screen switching ----------
+      const railItems = Array.from(document.querySelectorAll('.rail-item'));
+      const screens = Array.from(document.querySelectorAll('.screen'));
+      const eyebrow = document.getElementById('topbar-eyebrow');
+      const sub = document.getElementById('topbar-sub');
+      const SUBS = {
+        home: "Today's digest",
+        live: 'Live everywhere',
+        analyze: 'Single video understanding',
+      };
+      function show(name) {
+        screens.forEach((s) => s.classList.toggle('active', s.dataset.screen === name));
+        railItems.forEach((b) => b.classList.toggle('active', b.dataset.screen === name));
+        if (sub) sub.textContent = SUBS[name] || '';
+        try { history.replaceState(null, '', '#' + name); } catch (_e) {}
+        // Re-trigger animation
+        const target = screens.find((s) => s.dataset.screen === name);
+        if (target) { target.style.animation = 'none'; void target.offsetWidth; target.style.animation = ''; }
+      }
+      railItems.forEach((b) => b.addEventListener('click', () => show(b.dataset.screen)));
+      document.querySelectorAll('[data-go]').forEach((el) => {
+        el.addEventListener('click', (e) => { e.preventDefault(); show(el.dataset.go); });
+      });
+      const initial = (location.hash || '').replace('#', '');
+      if (initial && SUBS[initial]) show(initial);
+
+      // ---------- Analysis form (preserved logic) ----------
       const form = document.getElementById("analyze-form");
       if (!form) return;
 
@@ -374,6 +1093,12 @@
       const liveStopBtn = document.getElementById("live_stop_btn");
       const recordStartBtn = document.getElementById("record_start_btn");
       const recordStopBtn = document.getElementById("record_stop_btn");
+      const overlayLabel = document.getElementById("live_overlay_label");
+      const overlayDot = document.getElementById("live_overlay_dot");
+      const overlayCode = document.getElementById("live_overlay_code");
+      const statLive = document.getElementById("stat-live");
+      const statLiveSub = document.getElementById("stat-live-sub");
+      const statRecordings = document.getElementById("stat-recordings");
 
       function setBar(fillEl, value) {
         fillEl.classList.remove("indeterminate");
@@ -401,12 +1126,9 @@
             option.textContent = `${item.name} (${item.size_mb} MB)`;
             recordedSelect.appendChild(option);
           }
-          if (previous) {
-            recordedSelect.value = previous;
-          }
-        } catch (_err) {
-          // Ignore transient errors.
-        }
+          if (previous) recordedSelect.value = previous;
+          if (statRecordings) statRecordings.textContent = String(items.length);
+        } catch (_err) { /* ignore */ }
       }
 
       async function postJson(url, payload) {
@@ -423,16 +1145,31 @@
           const resp = await fetch("/live/status", { cache: "no-store" });
           if (!resp.ok) return;
           const data = await resp.json();
-          const stateLabel = data.running ? "Live running" : "Live stopped";
-          const recLabel = data.recording_active ? ` | recording: ${data.recording_file || "active"}` : "";
-          const errLabel = data.error ? ` | error: ${data.error}` : "";
+          const running = !!data.running;
+          const recording = !!data.recording_active;
+          const stateLabel = running ? "Live running" : "Live stopped";
+          const recLabel = recording ? ` · recording: ${data.recording_file || "active"}` : "";
+          const errLabel = data.error ? ` · error: ${data.error}` : "";
           liveStatus.textContent = `${stateLabel}${recLabel}${errLabel}`;
+
+          if (overlayLabel) overlayLabel.textContent = recording ? "Recording" : (running ? "Live now" : "Idle");
+          if (overlayDot) {
+            overlayDot.classList.toggle('pulse', running);
+            overlayDot.classList.toggle('quiet', !running);
+          }
+          if (statLive) statLive.textContent = running ? "Live" : (recording ? "Rec" : "Idle");
+          if (statLiveSub) statLiveSub.textContent = errLabel ? "needs attention" : (recording ? "saving frames" : (running ? "streaming" : "RTSP feed"));
+
           if (data.rtsp_url && rtspInput) {
             rtspInput.value = data.rtsp_url;
+            if (overlayCode) {
+              try {
+                const u = new URL(data.rtsp_url);
+                overlayCode.textContent = u.hostname || "RTSP";
+              } catch (_e) { overlayCode.textContent = "RTSP"; }
+            }
           }
-          if (!data.recording_active && data.recording_file == null) {
-            refreshRecordedVideos();
-          }
+          if (!recording && data.recording_file == null) refreshRecordedVideos();
           const streams = Array.isArray(data.discovered_streams) ? data.discovered_streams : [];
           if (streams.length > 0) {
             const previous = liveStreamSelect.value;
@@ -443,27 +1180,18 @@
               option.textContent = streamUrl;
               liveStreamSelect.appendChild(option);
             }
-            if (previous && streams.includes(previous)) {
-              liveStreamSelect.value = previous;
-            }
+            if (previous && streams.includes(previous)) liveStreamSelect.value = previous;
           }
-        } catch (_err) {
-          // Ignore transient errors.
-        }
+        } catch (_err) { /* ignore */ }
       }
 
       liveStreamSelect.addEventListener("change", function () {
-        if (liveStreamSelect.value) {
-          rtspInput.value = liveStreamSelect.value;
-        }
+        if (liveStreamSelect.value) rtspInput.value = liveStreamSelect.value;
       });
 
       liveDiscoverBtn.addEventListener("click", async function () {
         const data = await postJson("/live/discover", { rtsp_url: rtspInput.value.trim() });
-        if (data.error) {
-          liveStatus.textContent = data.error;
-          return;
-        }
+        if (data.error) { liveStatus.textContent = data.error; return; }
         const streams = Array.isArray(data.streams) ? data.streams : [];
         liveStreamSelect.innerHTML = "<option value=''>Discovered streams</option>";
         for (const streamUrl of streams) {
@@ -486,10 +1214,7 @@
 
       liveStartBtn.addEventListener("click", async function () {
         const data = await postJson("/live/start", { rtsp_url: rtspInput.value.trim() });
-        if (data.error) {
-          liveStatus.textContent = data.error;
-          return;
-        }
+        if (data.error) { liveStatus.textContent = data.error; return; }
         liveFeedImg.src = "/live/feed?ts=" + Date.now();
         refreshLiveStatus();
       });
@@ -501,20 +1226,14 @@
 
       recordStartBtn.addEventListener("click", async function () {
         const data = await postJson("/recordings/start", { rtsp_url: rtspInput.value.trim() });
-        if (data.error) {
-          liveStatus.textContent = data.error;
-          return;
-        }
+        if (data.error) { liveStatus.textContent = data.error; return; }
         liveFeedImg.src = "/live/feed?ts=" + Date.now();
         refreshLiveStatus();
       });
 
       recordStopBtn.addEventListener("click", async function () {
         const data = await postJson("/recordings/stop", {});
-        if (data.error) {
-          liveStatus.textContent = data.error;
-          return;
-        }
+        if (data.error) { liveStatus.textContent = data.error; return; }
         const saved = data.saved_recording;
         refreshRecordedVideos(saved && saved.name ? saved.name : null);
         refreshLiveStatus();
@@ -601,9 +1320,7 @@
           const poll = window.setInterval(async function () {
             try {
               const resp = await fetch("/analyze/status/" + jobId, { cache: "no-store" });
-              if (!resp.ok) {
-                return;
-              }
+              if (!resp.ok) return;
               const status = await resp.json();
 
               const detectPct = Math.max(0, Math.min(100, Number(status.detect_progress || 0)));
@@ -636,9 +1353,7 @@
                 window.clearInterval(poll);
                 window.location.href = "/analyze/result/" + jobId;
               }
-            } catch (_err) {
-              // Continue polling through transient errors.
-            }
+            } catch (_err) { /* keep polling */ }
           }, 700);
         });
 

@@ -450,6 +450,44 @@
     .form-grid .full { grid-column: 1 / -1; }
     @media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } }
 
+    /* ---------- Toggle (checkbox) ---------- */
+    .toggle {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: var(--surface-sunk);
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+    .toggle-track {
+      position: relative;
+      flex-shrink: 0;
+      width: 36px; height: 22px;
+      border-radius: 999px;
+      background: var(--border-strong);
+      transition: background .2s ease;
+      margin-top: 1px;
+    }
+    .toggle-thumb {
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform .2s ease;
+    }
+    .toggle input:checked + .toggle-track {
+      background: var(--accent);
+    }
+    .toggle input:checked + .toggle-track .toggle-thumb {
+      transform: translateX(14px);
+    }
+    .toggle-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .toggle-title { font-size: 13.5px; font-weight: 500; color: var(--text); letter-spacing: -0.1px; }
+    .toggle-sub { font-size: 12.5px; color: var(--text-muted); line-height: 1.4; }
+
     /* ---------- Chips ---------- */
     .chip {
       display: inline-flex; align-items: center; gap: 6px;
@@ -467,14 +505,13 @@
     /* ---------- Live feed ---------- */
     .live-frame {
       position: relative;
-      aspect-ratio: 16 / 9;
       overflow: hidden;
       border-radius: var(--radius);
       background: #14110d;
       box-shadow: inset 0 0 0 1px var(--border);
     }
     .live-frame img {
-      width: 100%; height: 100%; object-fit: cover; display: block;
+      width: 100%; height: auto; display: block;
       background: #14110d;
     }
     .live-overlay-top {
@@ -871,6 +908,16 @@
                   <textarea id="prompt" name="prompt" rows="4">Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.</textarea>
                 </div>
                 <div class="full">
+                  <label class="toggle">
+                    <input type="checkbox" id="use_yolo_filter" name="use_yolo_filter" checked />
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">Filter to person-detected frames</span>
+                      <span class="toggle-sub">When off, the LLM sees frames sampled evenly across the whole video.</span>
+                    </span>
+                  </label>
+                </div>
+                <div class="full">
                   <button type="submit" class="btn primary lg">Run unified analysis</button>
                 </div>
               </div>
@@ -1064,7 +1111,11 @@
         el.addEventListener('click', (e) => { e.preventDefault(); show(el.dataset.go); });
       });
       const initial = (location.hash || '').replace('#', '');
-      if (initial && SUBS[initial]) show(initial);
+      if (initial && SUBS[initial]) {
+        show(initial);
+      } else if (/^\/analyze(\/|$)/.test(location.pathname)) {
+        show('analyze');
+      }
 
       // ---------- Analysis form (preserved logic) ----------
       const form = document.getElementById("analyze-form");
@@ -1351,7 +1402,7 @@
               const state = String(status.state || "");
               if (state === "done" || state === "error") {
                 window.clearInterval(poll);
-                window.location.href = "/analyze/result/" + jobId;
+                window.location.href = "/analyze/result/" + jobId + "#analyze";
               }
             } catch (_err) { /* keep polling */ }
           }, 700);

@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import uuid
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from urllib import error, request
@@ -501,8 +502,11 @@ def stop_live_stream() -> dict[str, object]:
 
 def start_recording(rtsp_url: str | None = None) -> dict[str, object]:
     start_live_stream(rtsp_url=rtsp_url)
-    filename = unique_name("recording", ".mp4")
+    filename = f"recording_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.mp4"
     recording_path = RECORDINGS_DIR / filename
+    if recording_path.exists():
+        filename = f"recording_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
+        recording_path = RECORDINGS_DIR / filename
     with LIVE_LOCK:
         LIVE_STATE["recording_path"] = recording_path
         LIVE_STATE["recording_active"] = True
@@ -1492,22 +1496,38 @@ def run_video_understanding(
     prompt: str,
     conf: float,
     llm_max_batch_requests: int,
+    use_yolo_filter: bool = True,
     progress_cb: callable | None = None,
 ) -> tuple[list[dict[str, str]], str, str, str, int | None, str | None]:
     n = max(1, int(n))
     if progress_cb is not None:
         progress_cb(2, "Starting video understanding")
-    person_frames = collect_person_frames_for_mosaic(
-        video_path, conf=conf, progress_cb=progress_cb)
-    if not person_frames:
-        raise RuntimeError(
-            "No YOLO person-detected frames were found for video understanding.")
     frames_per_mosaic = n * n
     scaled_frames_per_mosaic = frames_per_mosaic * MOSAIC_SCALE_DIVISOR
-    dynamic_t = max(1, (len(person_frames) +
-                    scaled_frames_per_mosaic - 1) // scaled_frames_per_mosaic)
-    t = min(dynamic_t, MAX_DYNAMIC_MOSAICS)
-    mosaics = build_temporal_mosaics(str(video_path), n=n, t=t)
+    person_frame_count: int | None = None
+    if use_yolo_filter:
+        person_frames = collect_person_frames_for_mosaic(
+            video_path, conf=conf, progress_cb=progress_cb)
+        if not person_frames:
+            raise RuntimeError(
+                "No YOLO person-detected frames were found for video understanding.")
+        person_frame_count = len(person_frames)
+        dynamic_t = max(1, (person_frame_count +
+                        scaled_frames_per_mosaic - 1) // scaled_frames_per_mosaic)
+        t = min(dynamic_t, MAX_DYNAMIC_MOSAICS)
+        mosaics = build_temporal_mosaics_from_frames(person_frames, n=n, t=t)
+    else:
+        try:
+            fps, duration = probe_video_metadata(video_path)
+            total_frames = max(1, int(fps * duration))
+        except Exception:
+            total_frames = scaled_frames_per_mosaic * MAX_DYNAMIC_MOSAICS
+        dynamic_t = max(1, (total_frames +
+                        scaled_frames_per_mosaic - 1) // scaled_frames_per_mosaic)
+        t = min(dynamic_t, MAX_DYNAMIC_MOSAICS)
+        if progress_cb is not None:
+            progress_cb(30, "Sampling frames evenly (YOLO filter off)")
+        mosaics = build_temporal_mosaics(str(video_path), n=n, t=t)
     if progress_cb is not None:
         progress_cb(55, "Built temporal staggered mosaics")
 
@@ -1575,8 +1595,13 @@ def run_video_understanding(
     gallery = [
         {"label": f"Mosaic {idx + 1}/{len(mosaics)}", "src": pil_to_data_url(img)} for idx, img in enumerate(mosaics)
     ]
+    frame_source = (
+        f"Person-detected frames: {person_frame_count}"
+        if use_yolo_filter and person_frame_count is not None
+        else "All frames (YOLO filter off)"
+    )
     stats = (
-        f"Detected person-frames: {len(person_frames)} | "
+        f"{frame_source} | "
         f"Mosaic size: {n}x{n} ({frames_per_mosaic} frames/mosaic) | "
         f"Mosaics generated: {t} (scale divisor: {MOSAIC_SCALE_DIVISOR}) | "
         f"LLM max batch requests: {max_workers}"
@@ -1592,6 +1617,7 @@ def run_full_analysis(
     llm_max_batch_requests: int,
     source_video_url: str,
     job_id: str | None = None,
+    use_yolo_filter: bool = True,
 ) -> dict[str, object]:
     started = time.perf_counter()
 
@@ -1645,6 +1671,7 @@ def run_full_analysis(
             prompt=prompt,
             conf=conf,
             llm_max_batch_requests=llm_max_batch_requests,
+            use_yolo_filter=use_yolo_filter,
             progress_cb=understanding_progress,
         )
         understanding_processing_seconds = round(
@@ -1731,6 +1758,7 @@ def analyze_route():
             "prompt",
             "Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.",
         )
+        use_yolo_filter = flask_request.form.get("use_yolo_filter", "").lower() not in {"", "0", "false", "off", "no"}
 
         upload_path, source_video_url = resolve_analysis_video()
         context = run_full_analysis(
@@ -1740,6 +1768,7 @@ def analyze_route():
             prompt=prompt,
             llm_max_batch_requests=llm_max_batch_requests,
             source_video_url=source_video_url,
+            use_yolo_filter=use_yolo_filter,
         )
         return render_page(**context)
     except Exception as exc:
@@ -1757,6 +1786,7 @@ def process_analysis_job(
     prompt: str,
     llm_max_batch_requests: int,
     source_video_url: str,
+    use_yolo_filter: bool = True,
 ) -> None:
     try:
         update_job(
@@ -1775,6 +1805,7 @@ def process_analysis_job(
             llm_max_batch_requests=llm_max_batch_requests,
             source_video_url=source_video_url,
             job_id=job_id,
+            use_yolo_filter=use_yolo_filter,
         )
         update_job(
             job_id,
@@ -1819,6 +1850,7 @@ def analyze_start():
             "prompt",
             "Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.",
         )
+        use_yolo_filter = flask_request.form.get("use_yolo_filter", "").lower() not in {"", "0", "false", "off", "no"}
 
         upload_path, source_video_url = resolve_analysis_video()
 
@@ -1838,7 +1870,7 @@ def analyze_start():
         worker = threading.Thread(
             target=process_analysis_job,
             args=(job_id, upload_path, conf, n, prompt,
-                  llm_max_batch_requests, source_video_url),
+                  llm_max_batch_requests, source_video_url, use_yolo_filter),
             daemon=True,
         )
         worker.start()

@@ -51,6 +51,14 @@
       background: #0b1220;
       color: var(--text);
     }
+    select, input[type="text"] {
+      width: 100%;
+      padding: 0.65rem;
+      border-radius: 9px;
+      border: 1px solid #475569;
+      background: #0b1220;
+      color: var(--text);
+    }
     button {
       border: none;
       border-radius: 9px;
@@ -106,6 +114,19 @@
     .hidden {
       display: none;
     }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: #fff;
+    }
+    .btn-muted {
+      background: #334155;
+      color: #e2e8f0;
+    }
     .progress-row {
       display: grid;
       gap: 0.3rem;
@@ -159,10 +180,23 @@
 
     <section class="card">
       <h2>Single Video Analysis</h2>
-      <p>Upload one video and run both person detection and video understanding together.</p>
+      <p>Choose a source video (uploaded or recorded) and run person detection + video understanding together.</p>
 
       <form id="analyze-form" action="/analyze" method="post" enctype="multipart/form-data">
-        <input type="file" name="video" accept="video/*" required />
+        <label for="analysis_source">Analysis source</label>
+        <select id="analysis_source" name="analysis_source">
+          <option value="upload">Uploaded video</option>
+          <option value="recorded">Recorded video</option>
+        </select>
+        <label for="recorded_video">Recorded videos</label>
+        <select id="recorded_video" name="recorded_video">
+          <option value="">Select recorded video</option>
+          {% for item in recorded_videos %}
+            <option value="{{ item.name }}">{{ item.name }} ({{ item.size_mb }} MB)</option>
+          {% endfor %}
+        </select>
+        <label for="video_upload">Upload video</label>
+        <input id="video_upload" type="file" name="video" accept="video/*" />
         <label for="conf">Detection confidence (0.01 - 0.99)</label>
         <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
         <label for="n">n (mosaic side)</label>
@@ -213,6 +247,27 @@
           </video>
         </div>
       {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Live RTSP Monitor + YOLO</h2>
+      <p>Default stream: {{ live_rtsp_default }}. Live frames are annotated with YOLO person detection.</p>
+      <form id="live-form" onsubmit="return false;">
+        <label for="live_rtsp_url">RTSP URL</label>
+        <input id="live_rtsp_url" type="text" value="{{ live_rtsp_default }}" />
+        <div class="btn-row">
+          <button id="live_discover_btn" type="button" class="btn-muted">Discover Streams</button>
+          <button id="live_start_btn" type="button">Start Live</button>
+          <button id="live_stop_btn" type="button" class="btn-muted">Stop Live</button>
+          <button id="record_start_btn" type="button">Start Recording</button>
+          <button id="record_stop_btn" type="button" class="btn-danger">Stop Recording</button>
+        </div>
+      </form>
+      <p id="live_status_text" class="note" style="margin-top:0.75rem;">Idle</p>
+      <select id="live_stream_select" style="margin-top:0.75rem;">
+        <option value="">Discovered streams will appear here</option>
+      </select>
+      <img id="live_feed_img" src="/live/feed" alt="Live detection stream" style="margin-top:0.8rem;" />
     </section>
 
     <section class="grid">
@@ -296,6 +351,9 @@
       const form = document.getElementById("analyze-form");
       if (!form) return;
 
+      const analysisSource = document.getElementById("analysis_source");
+      const recordedSelect = document.getElementById("recorded_video");
+      const videoUpload = document.getElementById("video_upload");
       const progressWrap = document.getElementById("progress-wrap");
       const uploadLabel = document.getElementById("upload-label");
       const uploadValue = document.getElementById("upload-value");
@@ -307,17 +365,178 @@
       const understandValue = document.getElementById("understand-value");
       const understandFill = document.getElementById("understand-fill");
       const submitBtn = form.querySelector("button[type='submit']");
+      const rtspInput = document.getElementById("live_rtsp_url");
+      const liveStatus = document.getElementById("live_status_text");
+      const liveFeedImg = document.getElementById("live_feed_img");
+      const liveDiscoverBtn = document.getElementById("live_discover_btn");
+      const liveStreamSelect = document.getElementById("live_stream_select");
+      const liveStartBtn = document.getElementById("live_start_btn");
+      const liveStopBtn = document.getElementById("live_stop_btn");
+      const recordStartBtn = document.getElementById("record_start_btn");
+      const recordStopBtn = document.getElementById("record_stop_btn");
 
       function setBar(fillEl, value) {
         fillEl.classList.remove("indeterminate");
         fillEl.style.width = value + "%";
       }
 
+      function applySourceUi() {
+        const source = analysisSource.value;
+        const usingRecorded = source === "recorded";
+        recordedSelect.disabled = !usingRecorded;
+        videoUpload.disabled = usingRecorded;
+      }
+
+      async function refreshRecordedVideos(preferredName) {
+        try {
+          const resp = await fetch("/recordings/list", { cache: "no-store" });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const items = Array.isArray(data.recorded_videos) ? data.recorded_videos : [];
+          const previous = preferredName || recordedSelect.value;
+          recordedSelect.innerHTML = "<option value=''>Select recorded video</option>";
+          for (const item of items) {
+            const option = document.createElement("option");
+            option.value = item.name;
+            option.textContent = `${item.name} (${item.size_mb} MB)`;
+            recordedSelect.appendChild(option);
+          }
+          if (previous) {
+            recordedSelect.value = previous;
+          }
+        } catch (_err) {
+          // Ignore transient errors.
+        }
+      }
+
+      async function postJson(url, payload) {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload || {}),
+        });
+        return resp.json();
+      }
+
+      async function refreshLiveStatus() {
+        try {
+          const resp = await fetch("/live/status", { cache: "no-store" });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const stateLabel = data.running ? "Live running" : "Live stopped";
+          const recLabel = data.recording_active ? ` | recording: ${data.recording_file || "active"}` : "";
+          const errLabel = data.error ? ` | error: ${data.error}` : "";
+          liveStatus.textContent = `${stateLabel}${recLabel}${errLabel}`;
+          if (data.rtsp_url && rtspInput) {
+            rtspInput.value = data.rtsp_url;
+          }
+          if (!data.recording_active && data.recording_file == null) {
+            refreshRecordedVideos();
+          }
+          const streams = Array.isArray(data.discovered_streams) ? data.discovered_streams : [];
+          if (streams.length > 0) {
+            const previous = liveStreamSelect.value;
+            liveStreamSelect.innerHTML = "<option value=''>Discovered streams</option>";
+            for (const streamUrl of streams) {
+              const option = document.createElement("option");
+              option.value = streamUrl;
+              option.textContent = streamUrl;
+              liveStreamSelect.appendChild(option);
+            }
+            if (previous && streams.includes(previous)) {
+              liveStreamSelect.value = previous;
+            }
+          }
+        } catch (_err) {
+          // Ignore transient errors.
+        }
+      }
+
+      liveStreamSelect.addEventListener("change", function () {
+        if (liveStreamSelect.value) {
+          rtspInput.value = liveStreamSelect.value;
+        }
+      });
+
+      liveDiscoverBtn.addEventListener("click", async function () {
+        const data = await postJson("/live/discover", { rtsp_url: rtspInput.value.trim() });
+        if (data.error) {
+          liveStatus.textContent = data.error;
+          return;
+        }
+        const streams = Array.isArray(data.streams) ? data.streams : [];
+        liveStreamSelect.innerHTML = "<option value=''>Discovered streams</option>";
+        for (const streamUrl of streams) {
+          const option = document.createElement("option");
+          option.value = streamUrl;
+          option.textContent = streamUrl;
+          liveStreamSelect.appendChild(option);
+        }
+        if (streams.length > 0) {
+          rtspInput.value = streams[0];
+          liveStreamSelect.value = streams[0];
+          liveStatus.textContent = `Found ${streams.length} stream(s).`;
+        } else {
+          liveStatus.textContent = "No streams discovered.";
+        }
+      });
+
+      analysisSource.addEventListener("change", applySourceUi);
+      applySourceUi();
+
+      liveStartBtn.addEventListener("click", async function () {
+        const data = await postJson("/live/start", { rtsp_url: rtspInput.value.trim() });
+        if (data.error) {
+          liveStatus.textContent = data.error;
+          return;
+        }
+        liveFeedImg.src = "/live/feed?ts=" + Date.now();
+        refreshLiveStatus();
+      });
+
+      liveStopBtn.addEventListener("click", async function () {
+        await postJson("/live/stop", {});
+        refreshLiveStatus();
+      });
+
+      recordStartBtn.addEventListener("click", async function () {
+        const data = await postJson("/recordings/start", { rtsp_url: rtspInput.value.trim() });
+        if (data.error) {
+          liveStatus.textContent = data.error;
+          return;
+        }
+        liveFeedImg.src = "/live/feed?ts=" + Date.now();
+        refreshLiveStatus();
+      });
+
+      recordStopBtn.addEventListener("click", async function () {
+        const data = await postJson("/recordings/stop", {});
+        if (data.error) {
+          liveStatus.textContent = data.error;
+          return;
+        }
+        const saved = data.saved_recording;
+        refreshRecordedVideos(saved && saved.name ? saved.name : null);
+        refreshLiveStatus();
+      });
+
+      setInterval(refreshLiveStatus, 2000);
+      refreshLiveStatus();
+      refreshRecordedVideos();
+
       form.addEventListener("submit", function (event) {
         event.preventDefault();
-        const fileInput = form.querySelector("input[type='file']");
-        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-          form.submit();
+        const source = analysisSource.value;
+        if (source === "upload" && (!videoUpload.files || videoUpload.files.length === 0)) {
+          uploadLabel.textContent = "Upload required for upload mode";
+          progressWrap.classList.remove("hidden");
+          setBar(uploadFill, 0);
+          return;
+        }
+        if (source === "recorded" && !recordedSelect.value) {
+          uploadLabel.textContent = "Pick a recorded video";
+          progressWrap.classList.remove("hidden");
+          setBar(uploadFill, 0);
           return;
         }
 
@@ -325,9 +544,15 @@
         submitBtn.disabled = true;
         progressWrap.classList.remove("hidden");
 
-        uploadLabel.textContent = "Upload in progress";
-        uploadValue.textContent = "0%";
-        setBar(uploadFill, 0);
+        if (source === "upload") {
+          uploadLabel.textContent = "Upload in progress";
+          uploadValue.textContent = "0%";
+          setBar(uploadFill, 0);
+        } else {
+          uploadLabel.textContent = "Using selected recorded video";
+          uploadValue.textContent = "100%";
+          setBar(uploadFill, 100);
+        }
 
         detectLabel.textContent = "Person detection";
         detectValue.textContent = "waiting";
@@ -352,14 +577,6 @@
           uploadLabel.textContent = "Upload complete";
           uploadValue.textContent = "100%";
           setBar(uploadFill, 100);
-
-          detectLabel.textContent = "Person detection queued";
-          detectValue.textContent = "0%";
-          setBar(detectFill, 0);
-
-          understandLabel.textContent = "Video understanding queued";
-          understandValue.textContent = "0%";
-          setBar(understandFill, 0);
         });
 
         xhr.addEventListener("load", function () {
@@ -371,6 +588,14 @@
             submitBtn.disabled = false;
             return;
           }
+
+          detectLabel.textContent = "Person detection queued";
+          detectValue.textContent = "0%";
+          setBar(detectFill, 0);
+
+          understandLabel.textContent = "Video understanding queued";
+          understandValue.textContent = "0%";
+          setBar(understandFill, 0);
 
           const jobId = data.job_id;
           const poll = window.setInterval(async function () {

@@ -14,11 +14,12 @@ import uuid
 from io import BytesIO
 from pathlib import Path
 from urllib import error, request
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import cv2
 import numpy as np
 import torch
-from flask import Flask, jsonify, render_template, request as flask_request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request as flask_request, send_from_directory
 from PIL import Image
 from ultralytics import YOLO
 
@@ -30,12 +31,28 @@ UPLOAD_DIR = RUNTIME_DIR / "uploads"
 OUTPUT_DIR = RUNTIME_DIR / "outputs"
 CACHE_DIR = RUNTIME_DIR / "cache"
 CLIPS_CACHE_DIR = CACHE_DIR / "video_clips"
+RECORDINGS_DIR = RUNTIME_DIR / "recordings"
 
 PT_MODEL_PATH = PERSON_DIR / "yolo26s.pt"
 ONNX_MODEL_PATH = PERSON_DIR / "yolo26s.onnx"
 
 LLAMACPP_BASE_URL = os.getenv("LLAMACPP_BASE_URL", "http://127.0.0.1:8078")
 LLAMACPP_MODEL = os.getenv("LLAMACPP_MODEL", "local-model")
+LIVE_RTSP_DEFAULT = os.getenv(
+    "LIVE_RTSP_URL",
+    "rtsp://user:robotics3800@192.168.42.218:554/cam/realmonitor?channel=1&subtype=1",
+)
+LIVE_RTSP_DISCOVER_USER = os.getenv("LIVE_RTSP_DISCOVER_USER", "user")
+LIVE_RTSP_DISCOVER_PASSWORD = os.getenv("LIVE_RTSP_DISCOVER_PASSWORD", "robotics3800")
+LIVE_DETECT_CONF = min(0.99, max(0.01, float(os.getenv("LIVE_DETECT_CONF", "0.25"))))
+LIVE_DISCOVERY_PROBE_TIMEOUT_S = max(2, int(os.getenv("LIVE_DISCOVERY_PROBE_TIMEOUT_S", "5")))
+LIVE_DISCOVERY_MAX_CANDIDATES = max(1, int(os.getenv("LIVE_DISCOVERY_MAX_CANDIDATES", "24")))
+LIVE_RTSP_READ_FAILS_BEFORE_RECONNECT = max(1, int(os.getenv("LIVE_RTSP_READ_FAILS_BEFORE_RECONNECT", "20")))
+LIVE_RTSP_RECONNECT_BASE_S = max(0.2, float(os.getenv("LIVE_RTSP_RECONNECT_BASE_S", "1.5")))
+LIVE_RTSP_RECONNECT_MAX_S = max(1.0, float(os.getenv("LIVE_RTSP_RECONNECT_MAX_S", "12.0")))
+LIVE_YOLO_EVERY_N_FRAMES = max(1, int(os.getenv("LIVE_YOLO_EVERY_N_FRAMES", "8")))
+LIVE_YOLO_IMGSZ = max(320, int(os.getenv("LIVE_YOLO_IMGSZ", "640")))
+LIVE_MODEL_RETRY_S = max(1.0, float(os.getenv("LIVE_MODEL_RETRY_S", "4.0")))
 REQUIRE_GPU = os.getenv("REQUIRE_GPU", "1").strip().lower() not in {
     "0", "false", "no"}
 VIDEO_BATCH_SIZE = max(1, int(os.getenv("VIDEO_BATCH_SIZE", "32")))
@@ -43,10 +60,15 @@ YOLO_FRAME_WORKERS = max(1, int(os.getenv("YOLO_FRAME_WORKERS", "4")))
 MAX_DYNAMIC_MOSAICS = max(1, int(os.getenv("MAX_DYNAMIC_MOSAICS", "24")))
 MOSAIC_SCALE_DIVISOR = max(1, int(os.getenv("MOSAIC_SCALE_DIVISOR", "8")))
 LLM_MAX_BATCH_REQUESTS = max(1, int(os.getenv("LLM_MAX_BATCH_REQUESTS", "16")))
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000",
+)
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CLIPS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 
@@ -56,6 +78,39 @@ inference_device: str = "cpu"
 inference_half: bool = False
 JOBS: dict[str, dict[str, object]] = {}
 JOBS_LOCK = threading.Lock()
+LIVE_LOCK = threading.Lock()
+LIVE_THREAD: threading.Thread | None = None
+RTSP_LAST_GOOD: dict[str, str] = {}
+LIVE_STATE: dict[str, object] = {
+    "running": False,
+    "rtsp_url": LIVE_RTSP_DEFAULT,
+    "last_jpeg": None,
+    "error": None,
+    "recording_active": False,
+    "recording_writer": None,
+    "recording_path": None,
+    "recording_started_at_ms": None,
+    "discovered_streams": [],
+}
+
+COMMON_RTSP_PATHS = [
+    "",
+    "/Streaming/Channels/101",
+    "/Streaming/Channels/102",
+    "/cam/realmonitor?channel=1&subtype=0",
+    "/cam/realmonitor?channel=1&subtype=1",
+    "/h264Preview_01_main",
+    "/h264Preview_01_sub",
+    "/live/ch00_0",
+    "/live/ch00_1",
+    "/stream1",
+    "/stream2",
+    "/11",
+    "/12",
+    "/axis-media/media.amp",
+    "/profile1/media.smp",
+    "/profile2/media.smp",
+]
 
 
 def unique_name(prefix: str, suffix: str) -> str:
@@ -81,6 +136,448 @@ def get_job(job_id: str) -> dict[str, object] | None:
         if job is None:
             return None
         return dict(job)
+
+
+def list_recorded_videos() -> list[dict[str, object]]:
+    videos: list[dict[str, object]] = []
+    for path in sorted(RECORDINGS_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
+        stat = path.stat()
+        videos.append(
+            {
+                "name": path.name,
+                "url": f"/files/recordings/{path.name}",
+                "created_at_ms": int(stat.st_mtime * 1000),
+                "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            }
+        )
+    return videos
+
+
+def _close_recording_writer_unlocked() -> None:
+    writer = LIVE_STATE.get("recording_writer")
+    if isinstance(writer, cv2.VideoWriter):
+        writer.release()
+    LIVE_STATE["recording_writer"] = None
+    LIVE_STATE["recording_active"] = False
+    LIVE_STATE["recording_started_at_ms"] = None
+
+
+def _reset_live_unlocked(reset_rtsp: bool = False) -> None:
+    LIVE_STATE["running"] = False
+    LIVE_STATE["last_jpeg"] = None
+    LIVE_STATE["error"] = None
+    _close_recording_writer_unlocked()
+    LIVE_STATE["recording_path"] = None
+    LIVE_STATE["discovered_streams"] = []
+    if reset_rtsp:
+        LIVE_STATE["rtsp_url"] = LIVE_RTSP_DEFAULT
+
+
+def _open_live_capture(rtsp_url: str) -> cv2.VideoCapture:
+    attempts: list[tuple[str, cv2.VideoCapture]] = [
+        ("ffmpeg", cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)),
+        ("default", cv2.VideoCapture(rtsp_url)),
+    ]
+    for backend_name, capture in attempts:
+        try:
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception:
+            pass
+        if not capture.isOpened():
+            capture.release()
+            continue
+
+        # Ensure we can actually read frames, not just open a socket.
+        warmup_deadline = time.time() + 6.0
+        while time.time() < warmup_deadline:
+            ok, frame = capture.read()
+            if ok and frame is not None and frame.size > 0:
+                return capture
+            time.sleep(0.05)
+        capture.release()
+
+    auth_hint = ""
+    if "@" in rtsp_url:
+        auth_hint = " Check credentials and encode special chars in password (e.g. @ -> %40)."
+    raise RuntimeError(f"Could not open RTSP stream: {rtsp_url}.{auth_hint}")
+
+
+def _assemble_rtsp_url(host: str, port: int, username: str | None, password: str | None, path: str) -> str:
+    safe_host = host.strip()
+    # Normalize first so already-encoded credentials (e.g. %40) do not get
+    # repeatedly encoded into %2540 across reconnect attempts.
+    safe_user = unquote((username or "").strip())
+    safe_pass = unquote((password or "").strip())
+    auth = ""
+    if safe_user:
+        auth = quote(safe_user, safe="")
+        if safe_pass:
+            auth += f":{quote(safe_pass, safe='')}"
+        auth += "@"
+    path_part = path or ""
+    if path_part and not path_part.startswith("/"):
+        path_part = f"/{path_part}"
+    return f"rtsp://{auth}{safe_host}:{int(port)}{path_part}"
+
+
+def _probe_rtsp_url(rtsp_url: str, timeout_s: int = 6) -> bool:
+    cmd = [
+        "ffprobe",
+        "-rtsp_transport",
+        "tcp",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "json",
+        rtsp_url,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def _rtsp_cache_key(host: str, port: int, username: str | None) -> str:
+    return f"{(username or '').strip().lower()}@{host.strip().lower()}:{int(port)}"
+
+
+def _cache_rtsp_stream(rtsp_url: str) -> None:
+    parsed = urlsplit(rtsp_url)
+    if parsed.scheme != "rtsp" or not parsed.hostname:
+        return
+    key = _rtsp_cache_key(parsed.hostname, int(parsed.port or 554), parsed.username)
+    RTSP_LAST_GOOD[key] = rtsp_url
+
+
+def _dedupe_urls(urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        deduped.append(url)
+    return deduped
+
+
+def discover_rtsp_streams(
+    host: str,
+    port: int,
+    username: str | None = None,
+    password: str | None = None,
+    max_results: int = 4,
+    preferred_urls: list[str] | None = None,
+) -> list[str]:
+    probe_user = username if username is not None else LIVE_RTSP_DISCOVER_USER
+    probe_pass = password if password is not None else LIVE_RTSP_DISCOVER_PASSWORD
+    path_candidates = [
+        _assemble_rtsp_url(host, port, probe_user, probe_pass, path)
+        for path in COMMON_RTSP_PATHS
+    ]
+    candidates = _dedupe_urls((preferred_urls or []) + path_candidates)[:LIVE_DISCOVERY_MAX_CANDIDATES]
+    found: list[str] = []
+    for url in candidates:
+        if _probe_rtsp_url(url, timeout_s=LIVE_DISCOVERY_PROBE_TIMEOUT_S):
+            found.append(url)
+            _cache_rtsp_stream(url)
+            if len(found) >= max_results:
+                break
+        time.sleep(0.08)
+    return found
+
+
+def resolve_live_rtsp_url(raw_rtsp_url: str | None) -> tuple[str, list[str]]:
+    target = (raw_rtsp_url or LIVE_RTSP_DEFAULT).strip()
+    if not target:
+        target = LIVE_RTSP_DEFAULT
+    if not target.startswith("rtsp://"):
+        target = f"rtsp://{target}"
+
+    parsed = urlsplit(target)
+    if parsed.scheme != "rtsp":
+        raise ValueError("RTSP URL must start with rtsp://")
+    if not parsed.hostname:
+        raise ValueError("Missing RTSP host.")
+
+    host = parsed.hostname
+    port = int(parsed.port or 554)
+    username = parsed.username or LIVE_RTSP_DISCOVER_USER
+    password = parsed.password or LIVE_RTSP_DISCOVER_PASSWORD
+    cache_key = _rtsp_cache_key(host, port, username)
+    cached_url = RTSP_LAST_GOOD.get(cache_key)
+    has_specific_path = bool(parsed.path and parsed.path not in {"", "/"}) or bool(parsed.query)
+
+    normalized = _assemble_rtsp_url(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        path=f"{parsed.path or ''}{('?' + parsed.query) if parsed.query else ''}",
+    )
+
+    if has_specific_path:
+        # For explicit stream URLs, skip ffprobe preflight to avoid double auth/connect
+        # patterns that can trigger camera lockouts on strict firmware.
+        return normalized, [normalized]
+
+    preferred = [cached_url] if cached_url else []
+    discovered = discover_rtsp_streams(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        preferred_urls=preferred,
+    )
+    if discovered:
+        return discovered[0], discovered
+    raise RuntimeError(
+        "No RTSP stream path discovered automatically. Try a full URL path like "
+        "rtsp://user:pass@host:554/Streaming/Channels/101"
+    )
+
+
+def _live_loop() -> None:
+    capture: cv2.VideoCapture | None = None
+    detector: YOLO | None = None
+    person_class_ids: list[int] = [0]
+    last_rtsp_url: str | None = None
+    consecutive_read_failures = 0
+    reconnect_sleep_s = LIVE_RTSP_RECONNECT_BASE_S
+    frame_counter = 0
+    last_annotated: np.ndarray | None = None
+    next_model_retry_at = 0.0
+    try:
+        while True:
+            with LIVE_LOCK:
+                running = bool(LIVE_STATE.get("running", False))
+                rtsp_url = str(LIVE_STATE.get("rtsp_url", LIVE_RTSP_DEFAULT))
+            if not running:
+                break
+
+            if capture is None or last_rtsp_url != rtsp_url:
+                if capture is not None:
+                    capture.release()
+                try:
+                    capture = _open_live_capture(rtsp_url)
+                    _cache_rtsp_stream(rtsp_url)
+                    last_rtsp_url = rtsp_url
+                    consecutive_read_failures = 0
+                    reconnect_sleep_s = LIVE_RTSP_RECONNECT_BASE_S
+                    with LIVE_LOCK:
+                        LIVE_STATE["error"] = None
+                except Exception as exc:
+                    with LIVE_LOCK:
+                        LIVE_STATE["error"] = f"{exc} | reconnecting in {reconnect_sleep_s:.1f}s"
+                    time.sleep(reconnect_sleep_s)
+                    reconnect_sleep_s = min(LIVE_RTSP_RECONNECT_MAX_S, reconnect_sleep_s * 1.6)
+                    continue
+
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                consecutive_read_failures += 1
+                if consecutive_read_failures < LIVE_RTSP_READ_FAILS_BEFORE_RECONNECT:
+                    with LIVE_LOCK:
+                        LIVE_STATE["error"] = (
+                            f"RTSP read failed ({consecutive_read_failures}/"
+                            f"{LIVE_RTSP_READ_FAILS_BEFORE_RECONNECT}); waiting before reconnect"
+                        )
+                    time.sleep(0.08)
+                    continue
+                with LIVE_LOCK:
+                    LIVE_STATE["error"] = f"RTSP unstable; reconnecting in {reconnect_sleep_s:.1f}s"
+                capture.release()
+                capture = None
+                consecutive_read_failures = 0
+                time.sleep(reconnect_sleep_s)
+                reconnect_sleep_s = min(LIVE_RTSP_RECONNECT_MAX_S, reconnect_sleep_s * 1.4)
+                continue
+            consecutive_read_failures = 0
+            reconnect_sleep_s = LIVE_RTSP_RECONNECT_BASE_S
+            frame_counter += 1
+
+            run_yolo = (frame_counter % LIVE_YOLO_EVERY_N_FRAMES) == 0
+            annotated = frame
+            if run_yolo:
+                now = time.time()
+                if detector is None and now >= next_model_retry_at:
+                    try:
+                        detector = get_model()
+                        person_class_ids = get_person_class_ids(detector)
+                        with LIVE_LOCK:
+                            LIVE_STATE["error"] = None
+                    except Exception as exc:
+                        next_model_retry_at = now + LIVE_MODEL_RETRY_S
+                        with LIVE_LOCK:
+                            LIVE_STATE["error"] = f"Model load retrying in {LIVE_MODEL_RETRY_S:.0f}s: {exc}"
+                if detector is not None:
+                    try:
+                        prediction = safe_yolo_predict(
+                            detector,
+                            source=frame,
+                            conf=LIVE_DETECT_CONF,
+                            classes=person_class_ids,
+                            device=inference_device,
+                            half=inference_half,
+                            stream=False,
+                            save=False,
+                            verbose=False,
+                            imgsz=LIVE_YOLO_IMGSZ,
+                        )
+                        annotated = prediction[0].plot() if prediction else frame
+                        last_annotated = annotated
+                    except Exception as exc:
+                        annotated = last_annotated if last_annotated is not None else frame
+                        with LIVE_LOCK:
+                            LIVE_STATE["error"] = f"Live YOLO failed: {exc}"
+                elif last_annotated is not None:
+                    annotated = last_annotated
+            elif last_annotated is not None:
+                annotated = last_annotated
+
+            with LIVE_LOCK:
+                recording_active = bool(LIVE_STATE.get("recording_active", False))
+                recording_writer = LIVE_STATE.get("recording_writer")
+                recording_path = LIVE_STATE.get("recording_path")
+
+            if recording_active and isinstance(recording_path, Path):
+                if not isinstance(recording_writer, cv2.VideoWriter):
+                    fps = capture.get(cv2.CAP_PROP_FPS)
+                    if not isinstance(fps, float) or fps <= 1:
+                        fps = 20.0
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    writer = cv2.VideoWriter(str(recording_path), fourcc, fps, (frame.shape[1], frame.shape[0]))
+                    with LIVE_LOCK:
+                        LIVE_STATE["recording_writer"] = writer
+                        recording_writer = writer
+                if isinstance(recording_writer, cv2.VideoWriter):
+                    recording_writer.write(frame)
+
+            encode_ok, encoded = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            if not encode_ok:
+                continue
+            with LIVE_LOCK:
+                LIVE_STATE["last_jpeg"] = encoded.tobytes()
+                current_error = str(LIVE_STATE.get("error") or "")
+                if not current_error.startswith("Live YOLO failed"):
+                    LIVE_STATE["error"] = None
+    finally:
+        if capture is not None:
+            capture.release()
+        with LIVE_LOCK:
+            _close_recording_writer_unlocked()
+            LIVE_STATE["running"] = False
+
+
+def _ensure_live_thread_running() -> None:
+    global LIVE_THREAD
+    with LIVE_LOCK:
+        if LIVE_THREAD is not None and LIVE_THREAD.is_alive():
+            return
+        LIVE_THREAD = threading.Thread(target=_live_loop, daemon=True)
+        LIVE_THREAD.start()
+
+
+def start_live_stream(rtsp_url: str | None = None) -> dict[str, object]:
+    target_url, discovered = resolve_live_rtsp_url(rtsp_url or LIVE_RTSP_DEFAULT)
+    with LIVE_LOCK:
+        LIVE_STATE["rtsp_url"] = target_url
+        LIVE_STATE["discovered_streams"] = discovered
+        LIVE_STATE["running"] = True
+        LIVE_STATE["error"] = None
+    _ensure_live_thread_running()
+    return get_live_status_payload()
+
+
+def stop_live_stream() -> dict[str, object]:
+    with LIVE_LOCK:
+        _reset_live_unlocked(reset_rtsp=False)
+    return get_live_status_payload()
+
+
+def start_recording(rtsp_url: str | None = None) -> dict[str, object]:
+    start_live_stream(rtsp_url=rtsp_url)
+    filename = unique_name("recording", ".mp4")
+    recording_path = RECORDINGS_DIR / filename
+    with LIVE_LOCK:
+        LIVE_STATE["recording_path"] = recording_path
+        LIVE_STATE["recording_active"] = True
+        LIVE_STATE["recording_started_at_ms"] = int(time.time() * 1000)
+    status = get_live_status_payload()
+    status["recording_file"] = filename
+    return status
+
+
+def stop_recording() -> dict[str, object]:
+    with LIVE_LOCK:
+        recording_path = LIVE_STATE.get("recording_path")
+        _close_recording_writer_unlocked()
+        LIVE_STATE["recording_path"] = None
+    recording_error: str | None = None
+    recording_url: str | None = None
+    payload = get_live_status_payload()
+    if isinstance(recording_path, Path):
+        try:
+            transcode_to_browser_mp4(recording_path)
+        except Exception as exc:
+            recording_error = str(exc)
+        recording_url = f"/files/recordings/{recording_path.name}"
+        payload["saved_recording"] = {
+            "name": recording_path.name,
+            "url": recording_url,
+        }
+    if recording_error:
+        payload["error"] = recording_error
+    return payload
+
+
+def get_live_status_payload() -> dict[str, object]:
+    with LIVE_LOCK:
+        recording_path = LIVE_STATE.get("recording_path")
+        payload = {
+            "running": bool(LIVE_STATE.get("running", False)),
+            "rtsp_url": str(LIVE_STATE.get("rtsp_url", LIVE_RTSP_DEFAULT)),
+            "error": LIVE_STATE.get("error"),
+            "recording_active": bool(LIVE_STATE.get("recording_active", False)),
+            "recording_started_at_ms": LIVE_STATE.get("recording_started_at_ms"),
+            "recording_file": recording_path.name if isinstance(recording_path, Path) else None,
+            "discovered_streams": list(LIVE_STATE.get("discovered_streams", [])),
+        }
+    payload["recorded_videos"] = list_recorded_videos()
+    return payload
+
+
+def resolve_analysis_video() -> tuple[Path, str]:
+    analysis_source = (flask_request.form.get("analysis_source", "upload") or "upload").strip().lower()
+    if analysis_source == "recorded":
+        selected_name = Path(flask_request.form.get("recorded_video", "")).name
+        if not selected_name:
+            raise ValueError("Choose a recorded video.")
+        recorded_path = RECORDINGS_DIR / selected_name
+        if not recorded_path.exists():
+            raise ValueError("Selected recorded video does not exist anymore.")
+        if not is_browser_friendly_video(recorded_path):
+            transcode_to_browser_mp4(recorded_path)
+        ext = recorded_path.suffix.lower() or ".mp4"
+        upload_path = UPLOAD_DIR / unique_name("video", ext)
+        shutil.copy2(recorded_path, upload_path)
+        return upload_path, f"/files/recordings/{selected_name}"
+
+    upload = flask_request.files.get("video")
+    if upload is None or not upload.filename:
+        raise ValueError("Please choose a video file.")
+    allowed_media(upload.filename, include_images=False, include_videos=True)
+    ext = Path(upload.filename).suffix.lower()
+    upload_path = UPLOAD_DIR / unique_name("video", ext)
+    upload.save(upload_path)
+    display_name = unique_name("source", ext)
+    display_path = OUTPUT_DIR / display_name
+    shutil.copy2(upload_path, display_path)
+    return upload_path, f"/files/outputs/{display_name}"
 
 
 def allowed_media(filename: str, *, include_images: bool = True, include_videos: bool = True) -> str:
@@ -149,11 +646,96 @@ def get_person_class_ids(detector: YOLO) -> list[int]:
     return sorted(person_ids) if person_ids else [0]
 
 
+def is_cuda_oom_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "out of memory" in text or "cuda error" in text
+
+
+def safe_yolo_predict(detector: YOLO, **kwargs):
+    try:
+        return detector.predict(**kwargs)
+    except Exception as exc:
+        preferred_device = str(kwargs.get("device", "cpu"))
+        if preferred_device.startswith("cuda") and is_cuda_oom_error(exc):
+            retry_kwargs = dict(kwargs)
+            retry_kwargs["device"] = "cpu"
+            retry_kwargs["half"] = False
+            return detector.predict(**retry_kwargs)
+        raise
+
+
 def run_cmd(cmd: list[str], err_prefix: str) -> None:
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         stderr_tail = "\n".join(proc.stderr.splitlines()[-12:])
         raise RuntimeError(f"{err_prefix}\n{stderr_tail}")
+
+
+def transcode_to_browser_mp4(src_path: Path) -> Path:
+    if not src_path.exists():
+        raise RuntimeError(f"Source video not found for transcode: {src_path}")
+    tmp_path = src_path.with_suffix(".browser.mp4")
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src_path),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(tmp_path),
+    ]
+    run_cmd(cmd, "Failed to transcode recording to browser-compatible MP4.")
+    tmp_path.replace(src_path)
+    return src_path
+
+
+def ffprobe_streams(path: Path) -> list[dict[str, object]]:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_streams",
+        "-of",
+        "json",
+        str(path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return []
+    try:
+        data = json.loads(proc.stdout)
+    except Exception:
+        return []
+    streams = data.get("streams", [])
+    return streams if isinstance(streams, list) else []
+
+
+def has_video_stream(path: Path) -> bool:
+    for stream in ffprobe_streams(path):
+        if str(stream.get("codec_type", "")).lower() == "video":
+            return True
+    return False
+
+
+def is_browser_friendly_video(path: Path) -> bool:
+    if path.suffix.lower() != ".mp4":
+        return False
+    for stream in ffprobe_streams(path):
+        if str(stream.get("codec_type", "")).lower() != "video":
+            continue
+        codec = str(stream.get("codec_name", "")).lower()
+        if codec == "h264":
+            return True
+    return False
 
 
 def sha256_file(path: Path, block_size: int = 1024 * 1024) -> str:
@@ -259,7 +841,8 @@ def detect_person_segments(
     processed_frames = 0
 
     for batch_start_idx, frame_batch in iter_video_frame_batches(src_path, batch_size=VIDEO_BATCH_SIZE):
-        batch_results = detector.predict(
+        batch_results = safe_yolo_predict(
+            detector,
             source=frame_batch,
             conf=conf,
             classes=person_class_ids,
@@ -313,15 +896,18 @@ def detect_person_segments(
 
 
 def cut_video_segment(src_path: Path, start_s: float, end_s: float, out_path: Path) -> None:
+    if end_s <= start_s:
+        raise RuntimeError("Invalid segment range for cutting.")
+    duration_s = end_s - start_s
     cmd = [
         "ffmpeg",
         "-y",
-        "-ss",
-        f"{start_s:.3f}",
-        "-to",
-        f"{end_s:.3f}",
         "-i",
         str(src_path),
+        "-ss",
+        f"{start_s:.3f}",
+        "-t",
+        f"{duration_s:.3f}",
         "-an",
         "-c:v",
         "libx264",
@@ -346,7 +932,8 @@ def create_annotated_source_video(
     conf: float,
 ) -> Path:
     ann_root = clip_dir / "annotated_source"
-    detector.predict(
+    safe_yolo_predict(
+        detector,
         source=str(src_path),
         conf=conf,
         classes=person_class_ids,
@@ -361,14 +948,17 @@ def create_annotated_source_video(
         verbose=False,
     )
     default_out = ann_root / src_path.name
-    if default_out.exists():
+    if default_out.exists() and has_video_stream(default_out):
         return default_out
 
     candidates = sorted((p for p in ann_root.iterdir()
                         if p.is_file()), key=lambda p: p.stat().st_mtime)
+    valid_video_candidates = [p for p in candidates if has_video_stream(p)]
+    if valid_video_candidates:
+        return valid_video_candidates[-1]
     if not candidates:
         raise RuntimeError("Failed to produce annotated video.")
-    return candidates[-1]
+    raise RuntimeError("Failed to produce annotated video stream.")
 
 
 def run_video_clipper(
@@ -391,9 +981,21 @@ def run_video_clipper(
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             clips = manifest.get("clips", [])
             if clips:
-                if progress_cb is not None:
-                    progress_cb(100, "Detection complete (cache hit)")
-                return clips, "Cache hit: reused existing person clips."
+                all_valid = True
+                for clip in clips:
+                    clip_url = str(clip.get("url", ""))
+                    clip_rel = clip_url.removeprefix("/files/")
+                    clip_path = RUNTIME_DIR / clip_rel
+                    if not clip_path.exists() or not has_video_stream(clip_path):
+                        all_valid = False
+                        break
+                if not all_valid:
+                    clips = []
+                    manifest_path.unlink(missing_ok=True)
+                else:
+                    if progress_cb is not None:
+                        progress_cb(100, "Detection complete (cache hit)")
+                    return clips, "Cache hit: reused existing person clips."
         except Exception:
             pass
 
@@ -412,10 +1014,20 @@ def run_video_clipper(
 
     if progress_cb is not None:
         progress_cb(85, "Rendering annotated detection video")
-    annotated_video = create_annotated_source_video(
-        src_path, clip_dir, detector, person_class_ids, conf)
+    clip_note_suffix = ""
+    try:
+        annotated_video = create_annotated_source_video(
+            src_path, clip_dir, detector, person_class_ids, conf
+        )
+    except Exception:
+        annotated_video = src_path
+        clip_note_suffix = " Annotated overlay unavailable; used source video for clipping."
+    _, clip_source_duration = probe_video_metadata(annotated_video)
     clips: list[dict[str, object]] = []
     for idx, (start_s, end_s) in enumerate(segments):
+        end_s = min(end_s, clip_source_duration)
+        if end_s <= start_s:
+            continue
         clip_name = f"clip_{idx:03d}.mp4"
         segment_path = clip_dir / clip_name
         if not segment_path.exists():
@@ -435,6 +1047,8 @@ def run_video_clipper(
             clip_pct = 90 + int(((idx + 1) / max(len(segments), 1)) * 10)
             progress_cb(min(100, clip_pct),
                         f"Cutting person clips ({idx + 1}/{len(segments)})")
+    if not clips:
+        raise RuntimeError("Person segments were found, but no playable clips could be cut.")
 
     manifest = {
         "source_sha256": file_hash,
@@ -452,7 +1066,7 @@ def run_video_clipper(
 
     if progress_cb is not None:
         progress_cb(100, "Detection complete")
-    return clips, f"Created {len(clips)} person clip(s) with bounding boxes and cached them."
+    return clips, f"Created {len(clips)} person clip(s) with bounding boxes and cached them.{clip_note_suffix}"
 
 
 def run_person_detection(
@@ -469,7 +1083,8 @@ def run_person_detection(
     detector = get_model()
     person_class_ids = get_person_class_ids(detector)
     run_dir_name = unique_name("result", "")
-    detector.predict(
+    safe_yolo_predict(
+        detector,
         source=str(src_path),
         conf=conf,
         classes=person_class_ids,
@@ -604,7 +1219,8 @@ def collect_person_frames_for_mosaic(
     processed_frames = 0
 
     for batch_start_idx, frame_batch in iter_video_frame_batches(video_path, batch_size=VIDEO_BATCH_SIZE):
-        batch_results = detector.predict(
+        batch_results = safe_yolo_predict(
+            detector,
             source=frame_batch,
             conf=conf,
             classes=person_class_ids,
@@ -1065,6 +1681,8 @@ def run_full_analysis(
 def render_page(**overrides: object):
     base = {
         "runtime": runtime_status(),
+        "live_rtsp_default": LIVE_RTSP_DEFAULT,
+        "recorded_videos": list_recorded_videos(),
         "overall_error": None,
         "overall_processing_seconds": None,
         "source_video_url": None,
@@ -1097,14 +1715,10 @@ def index():
 
 @app.post("/analyze")
 def analyze_route():
-    upload = flask_request.files.get("video")
-    if upload is None or not upload.filename:
-        return render_page(overall_error="Please choose a video file."), 400
-
     upload_path: Path | None = None
     try:
-        allowed_media(upload.filename, include_images=False,
-                      include_videos=True)
+        if get_live_status_payload().get("running"):
+            stop_live_stream()
         conf = float(flask_request.form.get("conf", "0.25"))
         if conf < 0.01 or conf > 0.99:
             raise ValueError("Confidence must be between 0.01 and 0.99.")
@@ -1118,13 +1732,7 @@ def analyze_route():
             "Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.",
         )
 
-        ext = Path(upload.filename).suffix.lower()
-        upload_path = UPLOAD_DIR / unique_name("video", ext)
-        upload.save(upload_path)
-        display_name = unique_name("source", ext)
-        display_path = OUTPUT_DIR / display_name
-        shutil.copy2(upload_path, display_path)
-        source_video_url = f"/files/outputs/{display_name}"
+        upload_path, source_video_url = resolve_analysis_video()
         context = run_full_analysis(
             upload_path,
             conf=conf,
@@ -1195,14 +1803,10 @@ def process_analysis_job(
 
 @app.post("/analyze/start")
 def analyze_start():
-    upload = flask_request.files.get("video")
-    if upload is None or not upload.filename:
-        return jsonify({"error": "Please choose a video file."}), 400
-
     upload_path: Path | None = None
     try:
-        allowed_media(upload.filename, include_images=False,
-                      include_videos=True)
+        if get_live_status_payload().get("running"):
+            stop_live_stream()
         conf = float(flask_request.form.get("conf", "0.25"))
         if conf < 0.01 or conf > 0.99:
             raise ValueError("Confidence must be between 0.01 and 0.99.")
@@ -1216,13 +1820,7 @@ def analyze_start():
             "Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.",
         )
 
-        ext = Path(upload.filename).suffix.lower()
-        upload_path = UPLOAD_DIR / unique_name("video", ext)
-        upload.save(upload_path)
-        display_name = unique_name("source", ext)
-        display_path = OUTPUT_DIR / display_name
-        shutil.copy2(upload_path, display_path)
-        source_video_url = f"/files/outputs/{display_name}"
+        upload_path, source_video_url = resolve_analysis_video()
 
         job_id = create_job(
             {
@@ -1249,6 +1847,89 @@ def analyze_start():
         if upload_path is not None and upload_path.exists():
             upload_path.unlink()
         return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/live/start")
+def live_start():
+    payload = flask_request.get_json(silent=True) or flask_request.form
+    rtsp_url = payload.get("rtsp_url") if isinstance(payload, dict) else None
+    try:
+        return jsonify(start_live_stream(str(rtsp_url) if rtsp_url else None))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/live/discover")
+def live_discover():
+    payload = flask_request.get_json(silent=True) or flask_request.form
+    rtsp_url = str(payload.get("rtsp_url", LIVE_RTSP_DEFAULT)) if isinstance(payload, dict) else LIVE_RTSP_DEFAULT
+    try:
+        parsed = urlsplit(rtsp_url if rtsp_url.startswith("rtsp://") else f"rtsp://{rtsp_url}")
+        host = parsed.hostname
+        if not host:
+            raise ValueError("Missing RTSP host.")
+        port = int(parsed.port or 554)
+        username = parsed.username or LIVE_RTSP_DISCOVER_USER
+        password = parsed.password or LIVE_RTSP_DISCOVER_PASSWORD
+        found = discover_rtsp_streams(host=host, port=port, username=username, password=password)
+        return jsonify({"streams": found, "count": len(found)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/live/stop")
+def live_stop():
+    return jsonify(stop_live_stream())
+
+
+@app.get("/live/status")
+def live_status():
+    return jsonify(get_live_status_payload())
+
+
+@app.get("/live/feed")
+def live_feed():
+    def generate():
+        boundary = b"--frame\r\n"
+        while True:
+            with LIVE_LOCK:
+                frame_jpeg = LIVE_STATE.get("last_jpeg")
+                running = bool(LIVE_STATE.get("running", False))
+            if isinstance(frame_jpeg, bytes):
+                yield (
+                    boundary
+                    + b"Content-Type: image/jpeg\r\n\r\n"
+                    + frame_jpeg
+                    + b"\r\n"
+                )
+            elif not running:
+                time.sleep(0.2)
+            time.sleep(0.08)
+
+    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.post("/recordings/start")
+def recordings_start():
+    payload = flask_request.get_json(silent=True) or flask_request.form
+    rtsp_url = payload.get("rtsp_url") if isinstance(payload, dict) else None
+    try:
+        return jsonify(start_recording(str(rtsp_url) if rtsp_url else None))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/recordings/stop")
+def recordings_stop():
+    try:
+        return jsonify(stop_recording())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.get("/recordings/list")
+def recordings_list():
+    return jsonify({"recorded_videos": list_recorded_videos()})
 
 
 @app.get("/analyze/status/<job_id>")

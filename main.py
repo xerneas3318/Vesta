@@ -61,6 +61,14 @@ YOLO_FRAME_WORKERS = max(1, int(os.getenv("YOLO_FRAME_WORKERS", "4")))
 MAX_DYNAMIC_MOSAICS = max(1, int(os.getenv("MAX_DYNAMIC_MOSAICS", "24")))
 MOSAIC_SCALE_DIVISOR = max(1, int(os.getenv("MOSAIC_SCALE_DIVISOR", "8")))
 LLM_MAX_BATCH_REQUESTS = max(1, int(os.getenv("LLM_MAX_BATCH_REQUESTS", "16")))
+AUTONOMOUS_TRIGGER_HITS = max(1, int(os.getenv("AUTONOMOUS_TRIGGER_HITS", "3")))
+AUTONOMOUS_TRIGGER_MISSES = max(1, int(os.getenv("AUTONOMOUS_TRIGGER_MISSES", "12")))
+AUTONOMOUS_MAX_CLIP_S = max(5.0, float(os.getenv("AUTONOMOUS_MAX_CLIP_S", "90.0")))
+AUTONOMOUS_PROMPT = os.getenv(
+    "AUTONOMOUS_PROMPT",
+    "Analyze this surveillance clip for suspicious activity or potential threats (theft, arson, vandalism, trespassing, assault, weapons).",
+)
+AUTONOMOUS_MAX_EVENTS = max(20, int(os.getenv("AUTONOMOUS_MAX_EVENTS", "200")))
 os.environ.setdefault(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS",
     "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000",
@@ -91,8 +99,19 @@ LIVE_STATE: dict[str, object] = {
     "recording_writer": None,
     "recording_path": None,
     "recording_started_at_ms": None,
+    "recording_kind": None,
+    "recording_event_id": None,
     "discovered_streams": [],
 }
+
+AUTONOMOUS_STATE: dict[str, object] = {
+    "enabled": False,
+    "last_event_at_ms": None,
+}
+EVENTS_PATH = RUNTIME_DIR / "events.json"
+EVENTS_LOCK = threading.Lock()
+AUTONOMOUS_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="auto-analyze")
 
 COMMON_RTSP_PATHS = [
     "",
@@ -152,6 +171,91 @@ def list_recorded_videos() -> list[dict[str, object]]:
             }
         )
     return videos
+
+
+def load_events() -> list[dict[str, object]]:
+    if not EVENTS_PATH.exists():
+        return []
+    try:
+        with EVENTS_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        events = data.get("events", [])
+        return list(events) if isinstance(events, list) else []
+    except Exception:
+        return []
+
+
+def _save_events_unlocked(events: list[dict[str, object]]) -> None:
+    trimmed = events[-AUTONOMOUS_MAX_EVENTS:]
+    tmp = EVENTS_PATH.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump({"events": trimmed}, f, indent=2)
+    tmp.replace(EVENTS_PATH)
+
+
+def append_event(event: dict[str, object]) -> None:
+    with EVENTS_LOCK:
+        events = load_events()
+        events.append(event)
+        _save_events_unlocked(events)
+
+
+def update_event(event_id: str, **fields: object) -> None:
+    with EVENTS_LOCK:
+        events = load_events()
+        for ev in events:
+            if ev.get("id") == event_id:
+                ev.update(fields)
+                break
+        _save_events_unlocked(events)
+
+
+def _autonomous_status_payload() -> dict[str, object]:
+    with LIVE_LOCK:
+        recording_kind = LIVE_STATE.get("recording_kind")
+        recording_event_id = LIVE_STATE.get("recording_event_id")
+    return {
+        "enabled": bool(AUTONOMOUS_STATE.get("enabled", False)),
+        "trigger_hits": AUTONOMOUS_TRIGGER_HITS,
+        "trigger_misses": AUTONOMOUS_TRIGGER_MISSES,
+        "max_clip_s": AUTONOMOUS_MAX_CLIP_S,
+        "recording_kind": recording_kind,
+        "recording_event_id": recording_event_id,
+        "last_event_at_ms": AUTONOMOUS_STATE.get("last_event_at_ms"),
+    }
+
+
+def analyze_autonomous_clip(event_id: str, clip_path: Path) -> None:
+    try:
+        if not clip_path.exists():
+            update_event(event_id, state="error", error="Clip file missing.")
+            return
+        try:
+            if not is_browser_friendly_video(clip_path):
+                transcode_to_browser_mp4(clip_path)
+        except Exception:
+            pass
+        gallery, captions, summary, stats, threat_score, threat_assessment = run_video_understanding(
+            clip_path,
+            n=4,
+            prompt=AUTONOMOUS_PROMPT,
+            conf=LIVE_DETECT_CONF,
+            llm_max_batch_requests=LLM_MAX_BATCH_REQUESTS,
+            use_yolo_filter=False,
+        )
+        update_event(
+            event_id,
+            state="done",
+            summary=summary,
+            captions=captions,
+            threat_score=threat_score,
+            threat_assessment=threat_assessment,
+            stats=stats,
+            analyzed_at_ms=int(time.time() * 1000),
+        )
+    except Exception as exc:
+        update_event(event_id, state="error", error=str(exc),
+                     analyzed_at_ms=int(time.time() * 1000))
 
 
 def _close_recording_writer_unlocked() -> None:
@@ -352,6 +456,10 @@ def _live_loop() -> None:
     frame_counter = 0
     last_annotated: np.ndarray | None = None
     next_model_retry_at = 0.0
+    auto_hits = 0
+    auto_misses = 0
+    auto_event_id: str | None = None
+    auto_event_started_at_ms: int | None = None
     try:
         while True:
             with LIVE_LOCK:
@@ -415,6 +523,7 @@ def _live_loop() -> None:
                         next_model_retry_at = now + LIVE_MODEL_RETRY_S
                         with LIVE_LOCK:
                             LIVE_STATE["error"] = f"Model load retrying in {LIVE_MODEL_RETRY_S:.0f}s: {exc}"
+                person_present_this_yolo: bool | None = None
                 if detector is not None:
                     try:
                         prediction = safe_yolo_predict(
@@ -431,12 +540,117 @@ def _live_loop() -> None:
                         )
                         annotated = prediction[0].plot() if prediction else frame
                         last_annotated = annotated
+                        if prediction:
+                            boxes = getattr(prediction[0], "boxes", None)
+                            person_present_this_yolo = bool(boxes is not None and len(boxes) > 0)
                     except Exception as exc:
                         annotated = last_annotated if last_annotated is not None else frame
                         with LIVE_LOCK:
                             LIVE_STATE["error"] = f"Live YOLO failed: {exc}"
                 elif last_annotated is not None:
                     annotated = last_annotated
+
+                # ---------- autonomous trigger ----------
+                if person_present_this_yolo is not None:
+                    with LIVE_LOCK:
+                        autonomous_enabled = bool(AUTONOMOUS_STATE.get("enabled", False))
+                        recording_kind = LIVE_STATE.get("recording_kind")
+                    if autonomous_enabled and recording_kind in (None, "auto"):
+                        if person_present_this_yolo:
+                            auto_hits += 1
+                            auto_misses = 0
+                        else:
+                            auto_misses += 1
+                            auto_hits = 0
+
+                        if auto_event_id is None and auto_hits >= AUTONOMOUS_TRIGGER_HITS:
+                            now_ms = int(time.time() * 1000)
+                            filename = f"auto_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.mp4"
+                            candidate = RECORDINGS_DIR / filename
+                            if candidate.exists():
+                                filename = f"auto_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
+                                candidate = RECORDINGS_DIR / filename
+                            event_id = "evt_" + uuid.uuid4().hex[:10]
+                            with LIVE_LOCK:
+                                LIVE_STATE["recording_path"] = candidate
+                                LIVE_STATE["recording_active"] = True
+                                LIVE_STATE["recording_kind"] = "auto"
+                                LIVE_STATE["recording_event_id"] = event_id
+                                LIVE_STATE["recording_started_at_ms"] = now_ms
+                                AUTONOMOUS_STATE["last_event_at_ms"] = now_ms
+                            append_event({
+                                "id": event_id,
+                                "started_at_ms": now_ms,
+                                "ended_at_ms": None,
+                                "clip_filename": filename,
+                                "clip_url": f"/files/recordings/{filename}",
+                                "state": "recording",
+                                "threat_score": None,
+                                "summary": None,
+                                "trigger": f"yolo_dwell hits={AUTONOMOUS_TRIGGER_HITS}",
+                            })
+                            auto_event_id = event_id
+                            auto_event_started_at_ms = now_ms
+                            auto_hits = 0
+                            auto_misses = 0
+
+                        elif auto_event_id is not None:
+                            now_ms = int(time.time() * 1000)
+                            clip_age_s = (now_ms - (auto_event_started_at_ms or now_ms)) / 1000.0
+                            stop_for_misses = auto_misses >= AUTONOMOUS_TRIGGER_MISSES
+                            stop_for_cap = clip_age_s >= AUTONOMOUS_MAX_CLIP_S
+                            if stop_for_misses or stop_for_cap:
+                                ending_event_id = auto_event_id
+                                with LIVE_LOCK:
+                                    recording_path_to_analyze = LIVE_STATE.get("recording_path")
+                                    _close_recording_writer_unlocked()
+                                    LIVE_STATE["recording_path"] = None
+                                    LIVE_STATE["recording_kind"] = None
+                                    LIVE_STATE["recording_event_id"] = None
+                                update_event(
+                                    ending_event_id,
+                                    state="analyzing",
+                                    ended_at_ms=now_ms,
+                                    duration_s=round(clip_age_s, 2),
+                                    stop_reason="cap" if stop_for_cap else "dwell-off",
+                                )
+                                if isinstance(recording_path_to_analyze, Path):
+                                    AUTONOMOUS_EXECUTOR.submit(
+                                        analyze_autonomous_clip,
+                                        ending_event_id,
+                                        recording_path_to_analyze,
+                                    )
+                                auto_event_id = None
+                                auto_event_started_at_ms = None
+                                auto_hits = 0
+                                auto_misses = 0
+                    else:
+                        auto_hits = 0
+                        auto_misses = 0
+                        if auto_event_id is not None:
+                            now_ms = int(time.time() * 1000)
+                            ending_event_id = auto_event_id
+                            with LIVE_LOCK:
+                                recording_path_to_analyze = LIVE_STATE.get("recording_path")
+                                _close_recording_writer_unlocked()
+                                LIVE_STATE["recording_path"] = None
+                                LIVE_STATE["recording_kind"] = None
+                                LIVE_STATE["recording_event_id"] = None
+                            update_event(
+                                ending_event_id,
+                                state="analyzing",
+                                ended_at_ms=now_ms,
+                                duration_s=round((now_ms - (auto_event_started_at_ms or now_ms)) / 1000.0, 2),
+                                stop_reason="autonomous-disabled",
+                            )
+                            if isinstance(recording_path_to_analyze, Path):
+                                AUTONOMOUS_EXECUTOR.submit(
+                                    analyze_autonomous_clip,
+                                    ending_event_id,
+                                    recording_path_to_analyze,
+                                )
+                            auto_event_id = None
+                            auto_event_started_at_ms = None
             elif last_annotated is not None:
                 annotated = last_annotated
 
@@ -508,6 +722,9 @@ def start_recording(rtsp_url: str | None = None) -> dict[str, object]:
         filename = f"recording_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.mp4"
         recording_path = RECORDINGS_DIR / filename
     with LIVE_LOCK:
+        LIVE_STATE["recording_kind"] = "manual"
+        LIVE_STATE["recording_event_id"] = None
+    with LIVE_LOCK:
         LIVE_STATE["recording_path"] = recording_path
         LIVE_STATE["recording_active"] = True
         LIVE_STATE["recording_started_at_ms"] = int(time.time() * 1000)
@@ -521,6 +738,8 @@ def stop_recording() -> dict[str, object]:
         recording_path = LIVE_STATE.get("recording_path")
         _close_recording_writer_unlocked()
         LIVE_STATE["recording_path"] = None
+        LIVE_STATE["recording_kind"] = None
+        LIVE_STATE["recording_event_id"] = None
     recording_error: str | None = None
     recording_url: str | None = None
     payload = get_live_status_payload()
@@ -1962,6 +2181,35 @@ def recordings_stop():
 @app.get("/recordings/list")
 def recordings_list():
     return jsonify({"recorded_videos": list_recorded_videos()})
+
+
+@app.post("/autonomous/start")
+def autonomous_start():
+    payload = flask_request.get_json(silent=True) or flask_request.form
+    rtsp_url = payload.get("rtsp_url") if isinstance(payload, dict) else None
+    try:
+        start_live_stream(str(rtsp_url) if rtsp_url else None)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+    AUTONOMOUS_STATE["enabled"] = True
+    return jsonify(_autonomous_status_payload())
+
+
+@app.post("/autonomous/stop")
+def autonomous_stop_route():
+    AUTONOMOUS_STATE["enabled"] = False
+    return jsonify(_autonomous_status_payload())
+
+
+@app.get("/autonomous/status")
+def autonomous_status_route():
+    return jsonify(_autonomous_status_payload())
+
+
+@app.get("/events")
+def events_list_route():
+    events = list(reversed(load_events()))
+    return jsonify({"events": events})
 
 
 @app.get("/analyze/status/<job_id>")

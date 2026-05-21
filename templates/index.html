@@ -535,6 +535,85 @@
     .live-dot.pulse { animation: sv-pulse 2s ease-out infinite; color: var(--ok); }
     .live-dot.quiet { background: #9aa1ad; }
 
+    /* ---------- Alerts inbox ---------- */
+    .alerts-list { display: flex; flex-direction: column; gap: 12px; }
+    .alerts-empty {
+      padding: 22px 24px;
+      background: var(--surface-card);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 13.5px;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .alert {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: start;
+      animation: sv-fade-in .25s ease both;
+    }
+    .alert-head {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      font-size: 12px; color: var(--text-muted); font-family: var(--mono);
+    }
+    .alert-state {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px; font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+    .alert-state.recording { background: var(--danger); color: #fff; }
+    .alert-state.analyzing { background: var(--accent-soft); color: var(--accent); }
+    .alert-state.done { background: var(--surface-sunk); color: var(--text-muted); }
+    .alert-state.error { background: oklch(0.55 0.18 25 / 0.12); color: var(--danger); }
+    .alert-summary {
+      margin-top: 8px;
+      font-size: 14.5px;
+      color: var(--text);
+      line-height: 1.5;
+      text-wrap: pretty;
+    }
+    .alert-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      letter-spacing: 0.1px;
+    }
+    .alert-side {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+      min-width: 110px;
+    }
+    .alert-score {
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: -0.6px;
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1;
+    }
+    .alert-score.high { color: var(--danger); }
+    .alert-score.mid { color: var(--warn); }
+    .alert-score-label {
+      font-size: 10.5px; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    .alert-clip-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      font-family: var(--font);
+    }
+    .alert-clip-link:hover { text-decoration: underline; }
+
     /* ---------- Home mini live preview ---------- */
     .home-live-mini {
       position: relative;
@@ -837,6 +916,36 @@
                   <button class="btn primary" data-go="analyze">Run analysis</button>
                 </div>
               </div>
+            </div>
+
+            <div class="card padded" id="autonomous-card">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:240px;">
+                  <h3>Autonomous watch</h3>
+                  <p class="note">When a person stays in frame for a moment, we auto-record the clip and send it to the LLM for a quick summary and threat score. Alerts show up below.</p>
+                  <div class="kv" style="margin-top:10px; font-family:var(--mono); font-size:11px;">
+                    <div class="k">Trigger</div><div class="v" id="auto-trigger-hits">—</div>
+                    <div class="k">Cool-off</div><div class="v" id="auto-trigger-misses">—</div>
+                    <div class="k">Max clip</div><div class="v" id="auto-max-clip">—</div>
+                  </div>
+                </div>
+                <label class="toggle" style="background:transparent; padding:0;">
+                  <input type="checkbox" id="autonomous_toggle" />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                  <span class="toggle-text">
+                    <span class="toggle-title" id="autonomous-label">Off</span>
+                    <span class="toggle-sub" id="autonomous-status">No active event</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="section-label">
+              <span class="lhs">Alerts</span>
+              <span class="chip mono" id="alerts-count">0</span>
+            </div>
+            <div id="alerts-list" class="alerts-list">
+              <div class="alerts-empty">No alerts yet. Turn on Autonomous watch above to start recording when people appear.</div>
             </div>
 
             <details class="card padded disclose" style="margin-top:0; border-top:none; padding-top:14px;">
@@ -1366,6 +1475,110 @@
       setInterval(refreshLiveStatus, 2000);
       refreshLiveStatus();
       refreshRecordedVideos();
+
+      // ---------- Autonomous watch ----------
+      const autoToggle = document.getElementById("autonomous_toggle");
+      const autoLabel = document.getElementById("autonomous-label");
+      const autoStatus = document.getElementById("autonomous-status");
+      const autoTrigHits = document.getElementById("auto-trigger-hits");
+      const autoTrigMisses = document.getElementById("auto-trigger-misses");
+      const autoMaxClip = document.getElementById("auto-max-clip");
+      const alertsList = document.getElementById("alerts-list");
+      const alertsCount = document.getElementById("alerts-count");
+
+      function formatTime(ms) {
+        if (!ms) return "";
+        try {
+          const d = new Date(ms);
+          return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) +
+            " · " + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        } catch (_e) { return ""; }
+      }
+
+      function renderAlert(ev) {
+        const state = String(ev.state || "");
+        const score = ev.threat_score;
+        const scoreClass = score == null ? '' : (score >= 60 ? 'high' : (score >= 30 ? 'mid' : ''));
+        const stateLabels = { recording: 'Recording', analyzing: 'Analyzing', done: 'Reviewed', error: 'Error' };
+        const summary = ev.summary || ev.error || (state === 'recording' ? 'Recording in progress…' : state === 'analyzing' ? 'Sending to the LLM…' : 'Pending.');
+        const meta = [
+          formatTime(ev.started_at_ms),
+          ev.duration_s != null ? `${ev.duration_s}s` : null,
+          ev.stop_reason || null,
+          ev.clip_filename || null,
+        ].filter(Boolean).join(' · ');
+        return `
+          <div class="alert">
+            <div>
+              <div class="alert-head">
+                <span class="alert-state ${state}">${stateLabels[state] || state}</span>
+                <span>${meta}</span>
+              </div>
+              <div class="alert-summary">${summary.replace(/</g, '&lt;')}</div>
+              ${ev.threat_assessment ? `<div class="alert-meta">${String(ev.threat_assessment).replace(/</g,'&lt;').slice(0, 320)}</div>` : ''}
+            </div>
+            <div class="alert-side">
+              ${score != null ? `<div class="alert-score ${scoreClass}">${score}</div><div class="alert-score-label">threat</div>` : ''}
+              ${ev.clip_url ? `<a class="alert-clip-link" href="${ev.clip_url}" target="_blank" rel="noopener">View clip ↗</a>` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      async function refreshEvents() {
+        try {
+          const resp = await fetch("/events", { cache: "no-store" });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const events = Array.isArray(data.events) ? data.events : [];
+          if (alertsCount) alertsCount.textContent = String(events.length);
+          if (alertsList) {
+            if (events.length === 0) {
+              alertsList.innerHTML = '<div class="alerts-empty">No alerts yet. Turn on Autonomous watch above to start recording when people appear.</div>';
+            } else {
+              alertsList.innerHTML = events.slice(0, 20).map(renderAlert).join('');
+            }
+          }
+        } catch (_e) { /* ignore */ }
+      }
+
+      async function refreshAutonomousStatus() {
+        try {
+          const resp = await fetch("/autonomous/status", { cache: "no-store" });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const enabled = !!data.enabled;
+          if (autoToggle && autoToggle.checked !== enabled) autoToggle.checked = enabled;
+          if (autoLabel) autoLabel.textContent = enabled ? "On" : "Off";
+          const recordingKind = data.recording_kind;
+          if (autoStatus) {
+            if (recordingKind === "auto") autoStatus.textContent = "Recording an event right now…";
+            else if (enabled) autoStatus.textContent = "Watching for people…";
+            else autoStatus.textContent = "No active event";
+          }
+          if (autoTrigHits) autoTrigHits.textContent = `${data.trigger_hits} hits`;
+          if (autoTrigMisses) autoTrigMisses.textContent = `${data.trigger_misses} misses`;
+          if (autoMaxClip) autoMaxClip.textContent = `${Math.round(data.max_clip_s)}s`;
+        } catch (_e) { /* ignore */ }
+      }
+
+      if (autoToggle) {
+        autoToggle.addEventListener("change", async () => {
+          const desired = autoToggle.checked;
+          try {
+            await postJson(desired ? "/autonomous/start" : "/autonomous/stop", {
+              rtsp_url: (rtspInput && rtspInput.value.trim()) || "",
+            });
+          } catch (_e) {}
+          refreshAutonomousStatus();
+          refreshLiveStatus();
+        });
+      }
+
+      refreshAutonomousStatus();
+      refreshEvents();
+      setInterval(refreshAutonomousStatus, 3000);
+      setInterval(refreshEvents, 5000);
 
       form.addEventListener("submit", function (event) {
         event.preventDefault();

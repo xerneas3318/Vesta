@@ -29,8 +29,17 @@ def newest_recording() -> Path:
     return candidates[0]
 
 
+def newest_source_or_recording() -> Path:
+    """Pick the most recent video the user actually analyzed: either a recording
+    in RECORDINGS_DIR or a staged upload copy in OUTPUT_DIR (source_*.mp4)."""
+    candidates: list[Path] = list(M.RECORDINGS_DIR.glob("*.mp4")) + list(M.OUTPUT_DIR.glob("source_*.mp4"))
+    if not candidates:
+        raise SystemExit("No analyzable video files found.")
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
 def main() -> int:
-    recording = newest_recording()
+    recording = newest_source_or_recording() if "--newest" in sys.argv else newest_recording()
     print(f"[test] using recording: {recording.name} ({recording.stat().st_size} bytes)")
 
     if not M.is_browser_friendly_video(recording):

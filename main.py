@@ -41,7 +41,7 @@ LLAMACPP_BASE_URL = os.getenv("LLAMACPP_BASE_URL", "http://127.0.0.1:8078")
 LLAMACPP_MODEL = os.getenv("LLAMACPP_MODEL", "local-model")
 LIVE_RTSP_DEFAULT = os.getenv(
     "LIVE_RTSP_URL",
-    "rtsp://user:robotics3800@192.168.42.218:554/cam/realmonitor?channel=1&subtype=1",
+    "rtsp://user:robotics3800@172.16.100.188:554/cam/realmonitor?channel=1&subtype=1",
 )
 LIVE_RTSP_DISCOVER_USER = os.getenv("LIVE_RTSP_DISCOVER_USER", "user")
 LIVE_RTSP_DISCOVER_PASSWORD = os.getenv("LIVE_RTSP_DISCOVER_PASSWORD", "robotics3800")

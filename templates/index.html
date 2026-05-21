@@ -535,6 +535,35 @@
     .live-dot.pulse { animation: sv-pulse 2s ease-out infinite; color: var(--ok); }
     .live-dot.quiet { background: #9aa1ad; }
 
+    /* ---------- Home mini live preview ---------- */
+    .home-live-mini {
+      position: relative;
+      margin-top: 14px;
+      width: 220px;
+      max-width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #14110d;
+      box-shadow: var(--shadow);
+      animation: sv-fade-in .25s ease both;
+    }
+    .home-live-mini img { width: 100%; height: auto; display: block; }
+    .home-live-mini-badge {
+      position: absolute;
+      top: 8px; left: 8px;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
     /* ---------- Disclosure ---------- */
     .disclose {
       border-top: 1px solid var(--border);
@@ -626,7 +655,16 @@
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       margin-top: 14px;
     }
-    .mosaics figure { margin: 0; }
+    .mosaics figure { margin: 0; min-width: 0; }
+    .mosaics img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #14110d;
+      object-fit: contain;
+    }
     .mosaics figcaption {
       font-size: 11.5px; color: var(--text-muted);
       font-family: var(--mono); margin-top: 6px;
@@ -780,12 +818,16 @@
               </span>
             </div>
             <div class="card padded" style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
-              <div style="padding-right:12px; border-right:1px solid var(--border);">
+              <div style="padding-right:12px; border-right:1px solid var(--border); display:flex; flex-direction:column;">
                 <h3>Watch the campus, live</h3>
                 <p class="note">Stream the RTSP feed with YOLO person detection drawn on top. Discover stream sub-paths, start and stop the feed, and record clips for later.</p>
                 <div class="btn-row" style="margin-top:14px;">
-                  <button class="btn primary" data-go="live">Open Live</button>
+                  <button id="home_toggle_live_btn" class="btn primary" type="button">Toggle Live</button>
                   <button class="btn ghost" data-go="live">Recordings →</button>
+                </div>
+                <div id="home_live_mini" class="home-live-mini hidden">
+                  <img id="home_live_mini_img" src="/live/feed" alt="Live preview" />
+                  <span class="home-live-mini-badge"><span class="live-dot pulse"></span>Live</span>
                 </div>
               </div>
               <div>
@@ -1150,6 +1192,10 @@
       const statLive = document.getElementById("stat-live");
       const statLiveSub = document.getElementById("stat-live-sub");
       const statRecordings = document.getElementById("stat-recordings");
+      const homeToggleLiveBtn = document.getElementById("home_toggle_live_btn");
+      const homeLiveMini = document.getElementById("home_live_mini");
+      const homeLiveMiniImg = document.getElementById("home_live_mini_img");
+      let liveRunning = false;
 
       function setBar(fillEl, value) {
         fillEl.classList.remove("indeterminate");
@@ -1210,6 +1256,20 @@
           }
           if (statLive) statLive.textContent = running ? "Live" : (recording ? "Rec" : "Idle");
           if (statLiveSub) statLiveSub.textContent = errLabel ? "needs attention" : (recording ? "saving frames" : (running ? "streaming" : "RTSP feed"));
+
+          liveRunning = running;
+          if (homeLiveMini) homeLiveMini.classList.toggle('hidden', !running);
+          if (running && homeLiveMiniImg && !homeLiveMiniImg.dataset.started) {
+            homeLiveMiniImg.src = "/live/feed?ts=" + Date.now();
+            homeLiveMiniImg.dataset.started = "1";
+          }
+          if (!running && homeLiveMiniImg) {
+            delete homeLiveMiniImg.dataset.started;
+          }
+          if (homeToggleLiveBtn) {
+            homeToggleLiveBtn.textContent = running ? "Stop Live" : "Toggle Live";
+            homeToggleLiveBtn.classList.toggle('primary', !running);
+          }
 
           if (data.rtsp_url && rtspInput) {
             rtspInput.value = data.rtsp_url;
@@ -1274,6 +1334,19 @@
         await postJson("/live/stop", {});
         refreshLiveStatus();
       });
+
+      if (homeToggleLiveBtn) {
+        homeToggleLiveBtn.addEventListener("click", async function () {
+          if (liveRunning) {
+            await postJson("/live/stop", {});
+          } else {
+            const data = await postJson("/live/start", { rtsp_url: (rtspInput && rtspInput.value.trim()) || "" });
+            if (data && data.error) { liveStatus.textContent = data.error; }
+            if (liveFeedImg) liveFeedImg.src = "/live/feed?ts=" + Date.now();
+          }
+          refreshLiveStatus();
+        });
+      }
 
       recordStartBtn.addEventListener("click", async function () {
         const data = await postJson("/recordings/start", { rtsp_url: rtspInput.value.trim() });

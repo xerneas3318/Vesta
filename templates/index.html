@@ -450,6 +450,41 @@
     .form-grid .full { grid-column: 1 / -1; }
     @media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } }
 
+    .advanced {
+      grid-column: 1 / -1;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-sunk);
+      padding: 6px 14px;
+    }
+    .advanced > summary {
+      cursor: pointer;
+      padding: 8px 0;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      list-style: none;
+      display: flex; align-items: center; gap: 8px;
+      user-select: none;
+    }
+    .advanced > summary::-webkit-details-marker { display: none; }
+    .advanced > summary::before {
+      content: "▸";
+      font-size: 11px;
+      color: var(--text-muted);
+      transition: transform 0.15s ease;
+      display: inline-block;
+    }
+    .advanced[open] > summary::before { transform: rotate(90deg); }
+    .advanced[open] > summary { color: var(--text); }
+    .advanced-grid {
+      display: grid; gap: 14px;
+      grid-template-columns: 1fr 1fr;
+      padding: 6px 0 12px;
+    }
+    .advanced-grid .full { grid-column: 1 / -1; }
+    @media (max-width: 720px) { .advanced-grid { grid-template-columns: 1fr; } }
+
     /* ---------- Toggle (checkbox) ---------- */
     .toggle {
       display: flex; align-items: flex-start; gap: 12px;
@@ -1082,32 +1117,37 @@
                   <label for="video_upload">Upload video</label>
                   <input id="video_upload" type="file" name="video" accept="video/*" />
                 </div>
-                <div class="field">
-                  <label for="conf">Detection confidence</label>
-                  <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
-                </div>
-                <div class="field">
-                  <label for="n">Mosaic side (n)</label>
-                  <input id="n" type="number" name="n" min="1" max="20" step="1" value="4" />
-                </div>
-                <div class="field">
-                  <label for="llm_max_batch_requests">LLM max batch requests</label>
-                  <input id="llm_max_batch_requests" type="number" name="llm_max_batch_requests" min="1" max="64" step="1" value="{{ runtime.llm_max_batch_requests }}" />
-                </div>
-                <div class="field full">
-                  <label for="prompt">Prompt</label>
-                  <textarea id="prompt" name="prompt" rows="4">Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.</textarea>
-                </div>
-                <div class="full">
-                  <label class="toggle">
-                    <input type="checkbox" id="use_yolo_filter" name="use_yolo_filter" />
-                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                    <span class="toggle-text">
-                      <span class="toggle-title">Filter to person-detected frames</span>
-                      <span class="toggle-sub">When off, the LLM sees frames sampled evenly across the whole video.</span>
-                    </span>
-                  </label>
-                </div>
+                <details class="advanced full">
+                  <summary>Advanced options</summary>
+                  <div class="advanced-grid">
+                    <div class="field">
+                      <label for="conf">Detection confidence</label>
+                      <input id="conf" type="number" name="conf" min="0.01" max="0.99" step="0.01" value="0.25" />
+                    </div>
+                    <div class="field">
+                      <label for="n">Mosaic side (n)</label>
+                      <input id="n" type="number" name="n" min="1" max="20" step="1" value="4" />
+                    </div>
+                    <div class="field">
+                      <label for="llm_max_batch_requests">LLM max batch requests</label>
+                      <input id="llm_max_batch_requests" type="number" name="llm_max_batch_requests" min="1" max="64" step="1" value="{{ runtime.llm_max_batch_requests }}" />
+                    </div>
+                    <div class="field full">
+                      <label for="prompt">Prompt</label>
+                      <textarea id="prompt" name="prompt" rows="4">Analyze this surveillance video for suspicious activity and potential threats, including theft, arson, vandalism, trespassing, assault, and weapon-related behavior.</textarea>
+                    </div>
+                    <div class="full">
+                      <label class="toggle">
+                        <input type="checkbox" id="use_yolo_filter" name="use_yolo_filter" />
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                        <span class="toggle-text">
+                          <span class="toggle-title">Filter to person-detected frames</span>
+                          <span class="toggle-sub">When off, the LLM sees frames sampled evenly across the whole video.</span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </details>
                 <div class="full">
                   <button type="submit" class="btn primary lg">Run unified analysis</button>
                 </div>

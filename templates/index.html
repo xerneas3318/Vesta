@@ -1116,46 +1116,24 @@
             {% endif %}
           </div>
 
-          {% if clip_results or detect_error or detect_processing_seconds is not none or detect_result_note or understanding_gallery or understanding_summary or threat_score is not none %}
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
-            <article class="card padded">
-              <div class="section-label"><span class="lhs">Person detection</span></div>
-              {% if detect_error %}<div class="error">{{ detect_error }}</div>{% endif %}
-              {% if detect_processing_seconds is not none %}<div class="timer">Processing · {{ detect_processing_seconds }}s</div>{% endif %}
-              {% if detect_result_note %}<p class="note" style="margin-top:8px;">{{ detect_result_note }}</p>{% endif %}
+          {% if understanding_error or understanding_processing_seconds is not none or understanding_stats or understanding_summary or threat_score is not none or threat_assessment %}
+          <article class="card padded">
+            <div class="section-label"><span class="lhs">Video understanding</span></div>
+            {% if understanding_error %}<div class="error">{{ understanding_error }}</div>{% endif %}
+            {% if understanding_processing_seconds is not none %}<div class="timer">Processing · {{ understanding_processing_seconds }}s</div>{% endif %}
+            {% if understanding_stats %}<p class="note" style="margin-top:8px;">{{ understanding_stats }}</p>{% endif %}
 
-              {% if clip_results %}
-                <div class="clip-list">
-                  {% for clip in clip_results %}
-                    <div>
-                      <div class="clip-meta">Clip {{ clip.index }} · {{ clip.start_label }} → {{ clip.end_label }} ({{ clip.duration_s }}s)</div>
-                      <video controls preload="metadata">
-                        <source src="{{ clip.url }}" type="video/mp4" />
-                      </video>
-                    </div>
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </article>
+            {% if understanding_summary %}
+              <h3 style="margin-top:18px;">Final understanding</h3>
+              <pre>{{ understanding_summary }}</pre>
+            {% endif %}
 
-            <article class="card padded">
-              <div class="section-label"><span class="lhs">Video understanding</span></div>
-              {% if understanding_error %}<div class="error">{{ understanding_error }}</div>{% endif %}
-              {% if understanding_processing_seconds is not none %}<div class="timer">Processing · {{ understanding_processing_seconds }}s</div>{% endif %}
-              {% if understanding_stats %}<p class="note" style="margin-top:8px;">{{ understanding_stats }}</p>{% endif %}
-
-              {% if understanding_summary %}
-                <h3 style="margin-top:18px;">Final understanding</h3>
-                <pre>{{ understanding_summary }}</pre>
-              {% endif %}
-
-              {% if threat_score is not none %}
-                <h3 style="margin-top:18px;">Threat assessment</h3>
-                <p class="note" style="font-size:15px;">Threat score · <strong style="color:var(--text);">{{ threat_score }}/100</strong></p>
-              {% endif %}
-              {% if threat_assessment %}<pre>{{ threat_assessment }}</pre>{% endif %}
-            </article>
-          </div>
+            {% if threat_score is not none %}
+              <h3 style="margin-top:18px;">Threat assessment</h3>
+              <p class="note" style="font-size:15px;">Threat score · <strong style="color:var(--text);">{{ threat_score }}/100</strong></p>
+            {% endif %}
+            {% if threat_assessment %}<pre>{{ threat_assessment }}</pre>{% endif %}
+          </article>
           {% endif %}
         </section>
       </main>

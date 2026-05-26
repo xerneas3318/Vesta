@@ -344,16 +344,21 @@
     .screen.active { display: flex; flex-direction: column; gap: 32px; animation: sv-screen-in .4s cubic-bezier(.2,.7,.3,1) both; }
 
     /* ---------- Greeting ---------- */
-    .greet { padding-top: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
-    .greet-text { flex: 1; min-width: 260px; }
+    .greet { padding-top: 12px; }
+    .greet-text { display: block; }
     .greet-date { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.1px; }
+
+    /* ---------- Arm button (sidebar) ---------- */
+    .arm-block { padding: 0 8px 10px; }
     .arm-btn {
       display: inline-flex; align-items: center; gap: 10px;
-      padding: 12px 22px; border-radius: 999px;
+      width: 100%; justify-content: center;
+      padding: 10px 14px; border-radius: 10px;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
-      font-size: 15px; font-weight: 600; letter-spacing: 0.2px;
+      font-size: 13.5px; font-weight: 700; letter-spacing: 0.4px;
+      text-transform: uppercase;
       cursor: pointer;
       transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
@@ -362,41 +367,23 @@
       background: var(--text-muted);
     }
     .arm-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .arm-btn.armed { background: rgba(220, 70, 70, 0.12); border-color: rgba(220, 70, 70, 0.6); color: rgb(220, 90, 90); }
-    .arm-btn.armed::before { background: rgb(220, 90, 90); animation: arm-pulse 1.4s ease-in-out infinite; }
+    .arm-btn.armed { background: rgba(170, 40, 40, 0.14); border-color: rgba(170, 40, 40, 0.7); color: rgb(160, 35, 35); }
+    .arm-btn.armed::before { background: rgb(160, 35, 35); animation: arm-pulse 1.4s ease-in-out infinite; }
     @keyframes arm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
     /* ---------- Armed / lockdown state ---------- */
-    .armed-banner {
-      display: none;
-      position: sticky; top: 0; z-index: 50;
-      background: linear-gradient(90deg, rgba(220, 70, 70, 0.16), rgba(220, 70, 70, 0.28), rgba(220, 70, 70, 0.16));
-      border-bottom: 1px solid rgba(220, 70, 70, 0.55);
-      color: rgb(240, 200, 200);
-      font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
-      text-transform: uppercase;
-      padding: 8px 18px;
-      text-align: center;
-    }
-    .armed-banner .armed-dot {
-      display: inline-block; width: 8px; height: 8px; margin-right: 10px;
-      border-radius: 50%; background: rgb(220, 90, 90);
-      animation: arm-pulse 1.4s ease-in-out infinite;
-      vertical-align: middle;
-    }
-    body.armed .armed-banner { display: block; }
     body.armed {
-      --border: rgba(220, 70, 70, 0.45);
+      --border: rgba(170, 40, 40, 0.5);
     }
-    body.armed .card { box-shadow: 0 0 0 1px rgba(220, 70, 70, 0.15) inset; }
-    body.armed .stat-v { color: rgb(230, 110, 110); }
-    body.armed .greet-title { color: rgb(240, 150, 150); letter-spacing: 0.5px; text-transform: uppercase; font-size: 36px; }
-    body.armed .greet-body { color: rgb(220, 170, 170); }
-    body.armed .home-live-mini { border-color: rgba(220, 70, 70, 0.6) !important; box-shadow: 0 0 24px rgba(220, 70, 70, 0.2); }
-    body.armed .home-live-mini-badge { background: rgba(220, 70, 70, 0.85); color: #fff; }
+    body.armed .card { box-shadow: 0 0 0 1px rgba(170, 40, 40, 0.18) inset; }
+    body.armed .stat-v { color: rgb(160, 35, 35); font-weight: 700; }
+    body.armed .greet-title { color: rgb(150, 30, 30); font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; font-size: 36px; }
+    body.armed .greet-body { color: rgb(150, 60, 60); font-weight: 600; }
+    body.armed .home-live-mini { border-color: rgba(170, 40, 40, 0.7) !important; box-shadow: 0 0 24px rgba(170, 40, 40, 0.22); }
+    body.armed .home-live-mini-badge { background: rgba(170, 40, 40, 0.9); color: #fff; }
     body.armed .btn.primary { opacity: 0.55; pointer-events: none; }
-    body.armed .rail-item .rail-icon { color: rgb(220, 90, 90); }
-    body.armed .section-label .lhs { color: rgb(220, 140, 140); }
+    body.armed .rail-item .rail-icon { color: rgb(160, 35, 35); }
+    body.armed .section-label .lhs { color: rgb(150, 40, 40); font-weight: 700; }
     .greet-title {
       margin: 0; font-size: 44px; font-weight: 500; letter-spacing: -1.2px;
       line-height: 1.05; color: var(--text);
@@ -919,7 +906,6 @@
   </style>
 </head>
 <body>
-  <div class="armed-banner" id="armed-banner"><span class="armed-dot"></span>Security armed · Lockdown active</div>
   <div class="layout">
     <!-- ============================= SIDE RAIL ============================= -->
     <nav class="rail" aria-label="Primary">
@@ -947,6 +933,10 @@
       </button>
 
       <div class="rail-spacer"></div>
+
+      <div class="arm-block">
+        <button id="arm-btn" type="button" class="arm-btn" aria-pressed="false">Arm</button>
+      </div>
 
       <div class="theme-block">
         <div class="theme-label">Theme</div>
@@ -994,7 +984,6 @@
               <h1 class="greet-title">Good morning.</h1>
               <p class="greet-body">Campus is calm. A few things might be worth a glance, and the rest is running quietly in the background.</p>
             </div>
-            <button id="arm-btn" type="button" class="arm-btn" aria-pressed="false">Arm</button>
           </div>
 
           <div class="stat-grid stat-grid-2">

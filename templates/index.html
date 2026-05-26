@@ -374,6 +374,7 @@
     .stat-grid {
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
     }
+    .stat-grid.stat-grid-2 { grid-template-columns: repeat(2, 1fr); }
     .stat-k { font-size: 12.5px; color: var(--text-muted); letter-spacing: 0.1px; font-weight: 500; }
     .stat-v {
       font-size: 38px; font-weight: 500; letter-spacing: -1px; margin-top: 8px;
@@ -941,26 +942,16 @@
             <p class="greet-body">Campus is calm. A few things might be worth a glance, and the rest is running quietly in the background.</p>
           </div>
 
-          <div class="stat-grid">
+          <div class="stat-grid stat-grid-2">
             <div class="card padded">
-              <div class="stat-k">Live status</div>
+              <div class="stat-k">Live</div>
               <div class="stat-v" id="stat-live">—</div>
-              <div class="stat-sub" id="stat-live-sub">RTSP feed</div>
+              <div class="stat-sub" id="stat-live-sub">camera feed</div>
             </div>
             <div class="card padded">
               <div class="stat-k">Recordings</div>
               <div class="stat-v" id="stat-recordings">{{ recorded_videos|length }}</div>
               <div class="stat-sub">saved clips</div>
-            </div>
-            <div class="card padded">
-              <div class="stat-k">Detection batch</div>
-              <div class="stat-v">{{ runtime.video_batch_size }}</div>
-              <div class="stat-sub">{{ runtime.device }} · {{ runtime.precision }}</div>
-            </div>
-            <div class="card padded">
-              <div class="stat-k">LLM batch</div>
-              <div class="stat-v">{{ runtime.llm_max_batch_requests }}</div>
-              <div class="stat-sub">parallel requests</div>
             </div>
           </div>
 
@@ -973,8 +964,8 @@
             </div>
             <div class="card padded" style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
               <div style="padding-right:12px; border-right:1px solid var(--border); display:flex; flex-direction:column;">
-                <h3>Watch the campus, live</h3>
-                <p class="note">Stream the RTSP feed with YOLO person detection drawn on top. Discover stream sub-paths, start and stop the feed, and record clips for later.</p>
+                <h3>Watch live</h3>
+                <p class="note">See the camera feed with people automatically highlighted. Save clips with one click.</p>
                 <div class="btn-row" style="margin-top:14px;">
                   <button id="home_toggle_live_btn" class="btn primary" type="button">Toggle Live</button>
                   <button class="btn ghost" data-go="live">Recordings →</button>
@@ -985,10 +976,10 @@
                 </div>
               </div>
               <div>
-                <h3>Understand a video</h3>
-                <p class="note">Run person detection and an LLM-based understanding pass on an uploaded or recorded video. Generates clips, mosaics, captions, and a threat score.</p>
+                <h3>Review a video</h3>
+                <p class="note">Upload or pick a recording and we'll tell you what happened and how concerning it is.</p>
                 <div class="btn-row" style="margin-top:14px;">
-                  <button class="btn primary" data-go="analyze">Run analysis</button>
+                  <button class="btn primary" data-go="analyze">Review</button>
                 </div>
               </div>
             </div>
@@ -996,13 +987,8 @@
             <div class="card padded" id="autonomous-card">
               <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap;">
                 <div style="flex:1; min-width:240px;">
-                  <h3>Autonomous watch</h3>
-                  <p class="note">When a person stays in frame for a moment, we auto-record the clip and send it to the LLM for a quick summary and threat score. Alerts show up below.</p>
-                  <div class="kv" style="margin-top:10px; font-family:var(--mono); font-size:11px;">
-                    <div class="k">Trigger</div><div class="v" id="auto-trigger-hits">—</div>
-                    <div class="k">Cool-off</div><div class="v" id="auto-trigger-misses">—</div>
-                    <div class="k">Max clip</div><div class="v" id="auto-max-clip">—</div>
-                  </div>
+                  <h3>Auto watch</h3>
+                  <p class="note">Automatically records and reviews when someone is on camera. Alerts show up below.</p>
                 </div>
                 <label class="toggle" style="background:transparent; padding:0;">
                   <input type="checkbox" id="autonomous_toggle" />
@@ -1089,9 +1075,9 @@
         <!-- ====================== ANALYSIS SCREEN ====================== -->
         <section class="screen" data-screen="analyze">
           <header class="screen-head">
-            <div class="screen-eyebrow">Single video understanding</div>
-            <h1 class="screen-title">Analysis</h1>
-            <p class="screen-body">Pick an uploaded or recorded video and we'll find people, build mosaics, caption them, and write a final understanding with a threat score.</p>
+            <div class="screen-eyebrow">Review a video</div>
+            <h1 class="screen-title">Review</h1>
+            <p class="screen-body">Upload or pick a recording. You'll get a short description of what happened and a threat score.</p>
           </header>
 
           <div class="card padded">
@@ -1530,9 +1516,6 @@
       const autoToggle = document.getElementById("autonomous_toggle");
       const autoLabel = document.getElementById("autonomous-label");
       const autoStatus = document.getElementById("autonomous-status");
-      const autoTrigHits = document.getElementById("auto-trigger-hits");
-      const autoTrigMisses = document.getElementById("auto-trigger-misses");
-      const autoMaxClip = document.getElementById("auto-max-clip");
       const alertsList = document.getElementById("alerts-list");
       const alertsCount = document.getElementById("alerts-count");
 
@@ -1606,9 +1589,6 @@
             else if (enabled) autoStatus.textContent = "Watching for people…";
             else autoStatus.textContent = "No active event";
           }
-          if (autoTrigHits) autoTrigHits.textContent = `${data.trigger_hits} hits`;
-          if (autoTrigMisses) autoTrigMisses.textContent = `${data.trigger_misses} misses`;
-          if (autoMaxClip) autoMaxClip.textContent = `${Math.round(data.max_clip_s)}s`;
         } catch (_e) { /* ignore */ }
       }
 

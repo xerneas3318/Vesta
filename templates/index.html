@@ -1144,15 +1144,16 @@
               {% if understanding_processing_seconds is not none %}<div class="timer">Processing · {{ understanding_processing_seconds }}s</div>{% endif %}
               {% if understanding_stats %}<p class="note" style="margin-top:8px;">{{ understanding_stats }}</p>{% endif %}
 
-              {% if threat_score is not none %}
-                <h3 style="margin-top:18px;">Threat score</h3>
-                <p class="note" style="font-size:15px;"><strong style="color:var(--text);">{{ threat_score }}/100</strong></p>
-              {% endif %}
-
               {% if understanding_summary %}
-                <h3 style="margin-top:18px;">Final description</h3>
+                <h3 style="margin-top:18px;">Final understanding</h3>
                 <pre>{{ understanding_summary }}</pre>
               {% endif %}
+
+              {% if threat_score is not none %}
+                <h3 style="margin-top:18px;">Threat assessment</h3>
+                <p class="note" style="font-size:15px;">Threat score · <strong style="color:var(--text);">{{ threat_score }}/100</strong></p>
+              {% endif %}
+              {% if threat_assessment %}<pre>{{ threat_assessment }}</pre>{% endif %}
             </article>
           </div>
           {% endif %}

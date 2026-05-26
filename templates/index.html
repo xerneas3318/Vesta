@@ -1509,7 +1509,16 @@
       });
 
       setInterval(refreshLiveStatus, 2000);
-      refreshLiveStatus();
+      (async function autoStartLive() {
+        await refreshLiveStatus();
+        if (!liveRunning) {
+          try {
+            await postJson("/live/start", { rtsp_url: (rtspInput && rtspInput.value.trim()) || "" });
+            if (liveFeedImg) liveFeedImg.src = "/live/feed?ts=" + Date.now();
+          } catch (_e) { /* ignore */ }
+          refreshLiveStatus();
+        }
+      })();
       refreshRecordedVideos();
 
       // ---------- Autonomous watch ----------

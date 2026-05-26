@@ -367,23 +367,34 @@
       background: var(--text-muted);
     }
     .arm-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .arm-btn.armed { background: rgba(170, 40, 40, 0.14); border-color: rgba(170, 40, 40, 0.7); color: rgb(160, 35, 35); }
-    .arm-btn.armed::before { background: rgb(160, 35, 35); animation: arm-pulse 1.4s ease-in-out infinite; }
+    .arm-btn.armed { background: rgb(190, 35, 35); border-color: rgb(150, 25, 25); color: #fff; }
+    .arm-btn.armed::before { background: #fff; animation: arm-pulse 1.4s ease-in-out infinite; }
+    .arm-btn.armed:hover { background: rgb(170, 30, 30); border-color: rgb(150, 25, 25); color: #fff; }
     @keyframes arm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
     /* ---------- Armed / lockdown state ---------- */
     body.armed {
-      --border: rgba(170, 40, 40, 0.5);
+      --border: rgba(190, 35, 35, 0.55);
     }
-    body.armed .card { box-shadow: 0 0 0 1px rgba(170, 40, 40, 0.18) inset; }
-    body.armed .stat-v { color: rgb(160, 35, 35); font-weight: 700; }
-    body.armed .greet-title { color: rgb(150, 30, 30); font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; font-size: 36px; }
-    body.armed .greet-body { color: rgb(150, 60, 60); font-weight: 600; }
-    body.armed .home-live-mini { border-color: rgba(170, 40, 40, 0.7) !important; box-shadow: 0 0 24px rgba(170, 40, 40, 0.22); }
-    body.armed .home-live-mini-badge { background: rgba(170, 40, 40, 0.9); color: #fff; }
+    body.armed .card { box-shadow: 0 0 0 1px rgba(190, 35, 35, 0.22) inset; }
+    body.armed .stat-v { color: rgb(180, 30, 30); font-weight: 700; }
+    body.armed .stat-k,
+    body.armed .stat-sub { color: rgb(160, 70, 70); font-weight: 600; }
+    body.armed .greet-title { color: rgb(180, 30, 30); font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; font-size: 36px; }
+    body.armed .greet-body { color: rgb(165, 55, 55); font-weight: 600; }
+    body.armed .greet-date { color: rgb(170, 70, 70); font-weight: 600; }
+    body.armed .screen-eyebrow { color: rgb(170, 70, 70); font-weight: 700; }
+    body.armed .screen-title { color: rgb(180, 30, 30); font-weight: 700; }
+    body.armed .screen-body { color: rgb(165, 55, 55); font-weight: 600; }
+    body.armed h3 { color: rgb(180, 30, 30); font-weight: 700; }
+    body.armed .note { color: rgb(170, 70, 70); font-weight: 600; }
+    body.armed .home-live-mini { border-color: rgba(190, 35, 35, 0.75) !important; box-shadow: 0 0 24px rgba(190, 35, 35, 0.28); }
+    body.armed .home-live-mini-badge { background: rgba(190, 35, 35, 0.95); color: #fff; }
     body.armed .btn.primary { opacity: 0.55; pointer-events: none; }
-    body.armed .rail-item .rail-icon { color: rgb(160, 35, 35); }
-    body.armed .section-label .lhs { color: rgb(150, 40, 40); font-weight: 700; }
+    body.armed .rail-item .rail-ico { color: rgb(180, 30, 30); }
+    body.armed .rail-item { color: rgb(170, 70, 70); font-weight: 600; }
+    body.armed .rail-item.active { color: rgb(180, 30, 30); }
+    body.armed .section-label .lhs { color: rgb(180, 30, 30); font-weight: 700; }
     .greet-title {
       margin: 0; font-size: 44px; font-weight: 500; letter-spacing: -1.2px;
       line-height: 1.05; color: var(--text);

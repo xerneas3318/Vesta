@@ -1648,19 +1648,34 @@ def summarize_mosaic_answers(first_mosaic: Image.Image | None, mosaic_answers: s
 
 def parse_threat_assessment(raw_text: str) -> tuple[int, str]:
     score = 0
-    assessment = raw_text.strip()
-    try:
-        parsed = json.loads(raw_text)
-        if isinstance(parsed, dict):
-            maybe_score = parsed.get("threat_score")
-            if isinstance(maybe_score, (int, float)):
-                score = int(max(0, min(100, round(float(maybe_score)))))
-            maybe_assessment = parsed.get("assessment")
-            if isinstance(maybe_assessment, str) and maybe_assessment.strip():
-                assessment = maybe_assessment.strip()
-    except Exception:
-        pass
+    assessment = ""
 
+    candidates: list[str] = [raw_text.strip()]
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidates.append(fenced.group(1))
+    brace = re.search(r"\{.*\}", raw_text, re.DOTALL)
+    if brace:
+        candidates.append(brace.group(0))
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        maybe_score = parsed.get("threat_score")
+        if isinstance(maybe_score, (int, float)):
+            score = int(max(0, min(100, round(float(maybe_score)))))
+        maybe_assessment = parsed.get("assessment")
+        if isinstance(maybe_assessment, str) and maybe_assessment.strip():
+            assessment = maybe_assessment.strip()
+        if assessment:
+            break
+
+    if not assessment:
+        assessment = raw_text.strip()
     if score == 0:
         match = re.search(r"\b(100|[1-9]?\d)\b", raw_text)
         if match:

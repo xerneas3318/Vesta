@@ -2488,8 +2488,10 @@
         }
       }
 
+      let armedBySchedule = false;
       if (armBtn) {
         armBtn.addEventListener("click", function () {
+          armedBySchedule = false;
           applyArmedVisual(!armBtn.classList.contains("armed"));
         });
       }
@@ -2524,11 +2526,28 @@
       if (schedStart) schedStart.value = schedState.start;
       if (schedEnd) schedEnd.value = schedState.end;
 
+      let lastSchedTarget = null;
       function applyScheduleNow() {
-        if (!schedState.enabled) return;
+        if (!schedState.enabled) { lastSchedTarget = null; return; }
         const target = inWindow(new Date(), schedState.start, schedState.end);
         const currentlyArmed = armBtn && armBtn.classList.contains("armed");
-        if (target !== currentlyArmed) applyArmedVisual(target);
+        if (lastSchedTarget === null) {
+          if (target && !currentlyArmed) {
+            applyArmedVisual(true);
+            armedBySchedule = true;
+          }
+        } else if (target !== lastSchedTarget) {
+          if (target) {
+            if (!currentlyArmed) {
+              applyArmedVisual(true);
+              armedBySchedule = true;
+            }
+          } else if (armedBySchedule && currentlyArmed) {
+            applyArmedVisual(false);
+            armedBySchedule = false;
+          }
+        }
+        lastSchedTarget = target;
       }
 
       [schedEnabled, schedStart, schedEnd].forEach(el => {

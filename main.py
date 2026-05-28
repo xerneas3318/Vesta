@@ -65,7 +65,8 @@ MOSAIC_SCALE_DIVISOR = max(1, int(os.getenv("MOSAIC_SCALE_DIVISOR", "8")))
 LLM_MAX_BATCH_REQUESTS = max(1, int(os.getenv("LLM_MAX_BATCH_REQUESTS", "16")))
 AUTONOMOUS_TRIGGER_HITS = max(1, int(os.getenv("AUTONOMOUS_TRIGGER_HITS", "3")))
 AUTONOMOUS_TRIGGER_MISSES = max(1, int(os.getenv("AUTONOMOUS_TRIGGER_MISSES", "12")))
-AUTONOMOUS_MAX_CLIP_S = max(5.0, float(os.getenv("AUTONOMOUS_MAX_CLIP_S", "90.0")))
+AUTONOMOUS_DWELL_OFF_S = max(1.0, float(os.getenv("AUTONOMOUS_DWELL_OFF_S", "10.0")))
+AUTONOMOUS_MAX_CLIP_S = max(5.0, float(os.getenv("AUTONOMOUS_MAX_CLIP_S", "180.0")))
 AUTONOMOUS_PROMPT = os.getenv(
     "AUTONOMOUS_PROMPT",
     "Analyze this surveillance clip for suspicious activity or potential threats (theft, arson, vandalism, trespassing, assault, weapons).",
@@ -678,6 +679,7 @@ def _live_loop() -> None:
     auto_misses = 0
     auto_event_id: str | None = None
     auto_event_started_at_ms: int | None = None
+    auto_last_seen_at_ms: int | None = None
     try:
         while True:
             with LIVE_LOCK:
@@ -777,6 +779,7 @@ def _live_loop() -> None:
                         if person_present_this_yolo:
                             auto_hits += 1
                             auto_misses = 0
+                            auto_last_seen_at_ms = int(time.time() * 1000)
                         else:
                             auto_misses += 1
                             auto_hits = 0
@@ -809,13 +812,15 @@ def _live_loop() -> None:
                             })
                             auto_event_id = event_id
                             auto_event_started_at_ms = now_ms
+                            auto_last_seen_at_ms = now_ms
                             auto_hits = 0
                             auto_misses = 0
 
                         elif auto_event_id is not None:
                             now_ms = int(time.time() * 1000)
                             clip_age_s = (now_ms - (auto_event_started_at_ms or now_ms)) / 1000.0
-                            stop_for_misses = auto_misses >= AUTONOMOUS_TRIGGER_MISSES
+                            dwell_off_s = (now_ms - (auto_last_seen_at_ms or now_ms)) / 1000.0
+                            stop_for_misses = dwell_off_s >= AUTONOMOUS_DWELL_OFF_S
                             stop_for_cap = clip_age_s >= AUTONOMOUS_MAX_CLIP_S
                             if stop_for_misses or stop_for_cap:
                                 ending_event_id = auto_event_id
@@ -840,11 +845,13 @@ def _live_loop() -> None:
                                     )
                                 auto_event_id = None
                                 auto_event_started_at_ms = None
+                                auto_last_seen_at_ms = None
                                 auto_hits = 0
                                 auto_misses = 0
                     else:
                         auto_hits = 0
                         auto_misses = 0
+                        auto_last_seen_at_ms = None
                         if auto_event_id is not None:
                             now_ms = int(time.time() * 1000)
                             ending_event_id = auto_event_id

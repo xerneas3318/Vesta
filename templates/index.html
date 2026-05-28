@@ -433,14 +433,64 @@
     }
     .rec-card-meta { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
     .rec-card-actions { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 12px; gap: 8px; }
-    .rec-card-actions .flag-btn {
+    .rec-flag-row { display: flex; gap: 6px; }
+    .star-btn, .alert-btn {
       background: transparent; border: 1px solid var(--border); color: var(--text-muted);
-      padding: 4px 10px; border-radius: 999px; cursor: pointer;
-      font-size: 14px; transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+      padding: 5px 12px; border-radius: 999px; cursor: pointer;
+      font-size: 12.5px; font-weight: 600; letter-spacing: 0.2px;
+      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
     }
-    .rec-card-actions .flag-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .rec-card-actions .flag-btn.star { border-color: rgba(245, 200, 80, 0.65); color: rgb(220, 175, 70); background: rgba(245, 200, 80, 0.12); }
-    .rec-card-actions .flag-btn.alert { border-color: rgba(220, 90, 90, 0.65); color: rgb(200, 70, 70); background: rgba(220, 90, 90, 0.12); }
+    .star-btn:hover { border-color: rgba(245, 200, 80, 0.65); color: rgb(220, 175, 70); }
+    .star-btn.active { border-color: rgba(245, 200, 80, 0.75); color: rgb(220, 165, 50); background: rgba(245, 200, 80, 0.16); }
+    .alert-btn:hover { border-color: rgba(220, 90, 90, 0.65); color: rgb(200, 70, 70); }
+    .alert-btn.active { border-color: rgba(220, 70, 70, 0.85); color: rgb(190, 35, 35); background: rgba(220, 70, 70, 0.16); }
+
+    .rec-summary {
+      font-size: 12.5px; color: var(--text);
+      line-height: 1.45;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; text-overflow: ellipsis;
+      margin-top: 4px;
+    }
+    .rec-status-line {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text-muted);
+      font-style: italic; margin-top: 4px;
+    }
+    .rec-spin {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: rec-spin 0.85s linear infinite;
+    }
+    @keyframes rec-spin { to { transform: rotate(360deg); } }
+    .rec-score-chip, .rec-expanded-score {
+      display: inline-block; align-self: flex-start;
+      padding: 3px 10px; border-radius: 999px;
+      font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em;
+      border: 1px solid var(--border);
+      margin-top: 6px;
+    }
+    .rec-score-chip[data-tier="ok"], .rec-expanded-score[data-tier="ok"] { background: rgba(80, 160, 90, 0.18); border-color: rgba(80, 160, 90, 0.55); color: rgb(80, 170, 95); }
+    .rec-score-chip[data-tier="warn"], .rec-expanded-score[data-tier="warn"] { background: rgba(220, 170, 70, 0.18); border-color: rgba(220, 170, 70, 0.55); color: rgb(220, 170, 70); }
+    .rec-score-chip[data-tier="high"], .rec-expanded-score[data-tier="high"] { background: rgba(220, 110, 60, 0.2); border-color: rgba(220, 110, 60, 0.6); color: rgb(220, 110, 60); }
+    .rec-score-chip[data-tier="critical"], .rec-expanded-score[data-tier="critical"] { background: rgba(220, 70, 70, 0.22); border-color: rgba(220, 70, 70, 0.65); color: rgb(220, 80, 80); }
+
+    .rec-expanded-analysis { display: flex; flex-direction: column; gap: 6px; }
+    .rec-expanded-summary { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); }
+    .rec-expanded-assessment { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+
+    .ai-search-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 10px;
+      background: linear-gradient(135deg, rgba(120, 90, 200, 0.18), rgba(60, 130, 200, 0.18));
+      border: 1px solid rgba(120, 90, 200, 0.5);
+      color: rgb(170, 140, 240);
+      font-size: 13px; font-weight: 700; letter-spacing: 0.2px;
+      cursor: pointer;
+      transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+    }
+    .ai-search-btn:hover { border-color: rgb(150, 120, 230); color: rgb(200, 170, 255); }
+    .ai-search-btn .ai-spark { font-size: 14px; }
 
     .rec-expanded-body {
       display: none;
@@ -1343,7 +1393,7 @@
           <div class="recordings-toolbar">
             <div class="rec-search">
               <input id="rec_search_input" type="search" placeholder="Search by name, type, or what happened…" />
-              <button id="rec_search_smart" type="button" class="btn ghost" title="Use the LLM to find recordings by intent">Smart search</button>
+              <button id="rec_search_smart" type="button" class="ai-search-btn" title="Ask Qwen to find clips by intent (e.g. 'people tampering with the water heater')"><span class="ai-spark">✦</span> AI search</button>
             </div>
             <div class="rec-controls">
               <label class="rec-control">
@@ -1657,35 +1707,14 @@
       }
 
       // ---------- Recordings library state ----------
-      const REC_META_KEY = 'recordings-meta';
-      const FLAG_CYCLE = ['none', 'starred', 'important'];
       let recordingsCache = [];
-      let recordingsCacheKey = '';
+      let recordingsListKey = '';
       let recSearchOrder = null;
       let recSearchStatus = '';
       let expandedRecName = null;
+      let nameInputDebounce = new Map();
 
-      function loadRecMeta() {
-        try {
-          const raw = localStorage.getItem(REC_META_KEY);
-          if (raw) return JSON.parse(raw) || {};
-        } catch (_e) {}
-        return {};
-      }
-      function saveRecMeta(map) {
-        try { localStorage.setItem(REC_META_KEY, JSON.stringify(map)); } catch (_e) {}
-      }
-      function recMetaFor(name) {
-        const map = loadRecMeta();
-        return map[name] || { custom_name: "", flag: "none" };
-      }
-      function updateRecMeta(name, patch) {
-        const map = loadRecMeta();
-        const current = map[name] || { custom_name: "", flag: "none" };
-        map[name] = Object.assign({}, current, patch);
-        saveRecMeta(map);
-      }
-
+      function itemByName(name) { return recordingsCache.find(it => it.name === name); }
       function recKind(name) { return String(name || "").startsWith("auto_") ? "auto" : "manual"; }
       function recTimestampMs(item) { return Number(item.created_at_ms || 0); }
       function formatRecTimestamp(ms) {
@@ -1695,15 +1724,24 @@
           return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
         } catch (_e) { return "—"; }
       }
-      function flagIcon(flag) {
-        if (flag === 'starred') return '★';
-        if (flag === 'important') return '⚠';
-        return '☆';
+      function threatTier(score) {
+        if (score == null) return 'unknown';
+        if (score <= 20) return 'ok';
+        if (score <= 50) return 'warn';
+        if (score <= 80) return 'high';
+        return 'critical';
       }
-      function flagLabel(flag) {
-        if (flag === 'starred') return 'Starred';
-        if (flag === 'important') return 'Important';
-        return 'Flag';
+
+      async function pushRecMeta(name, patch) {
+        const item = itemByName(name);
+        if (item) Object.assign(item, patch);
+        try {
+          await fetch("/recordings/meta", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(Object.assign({ name }, patch)),
+          });
+        } catch (_e) { /* ignore — UI is optimistic */ }
       }
 
       function applyRecSortAndFilter(items) {
@@ -1714,16 +1752,15 @@
         let filtered = items.slice();
         if (filterMode === 'auto') filtered = filtered.filter(it => recKind(it.name) === 'auto');
         else if (filterMode === 'manual') filtered = filtered.filter(it => recKind(it.name) === 'manual');
-        else if (filterMode === 'starred') filtered = filtered.filter(it => recMetaFor(it.name).flag === 'starred');
-        else if (filterMode === 'important') filtered = filtered.filter(it => recMetaFor(it.name).flag === 'important');
+        else if (filterMode === 'starred') filtered = filtered.filter(it => !!it.starred);
+        else if (filterMode === 'important') filtered = filtered.filter(it => !!it.important);
 
         if (recSearchOrder) {
           const orderMap = new Map(recSearchOrder.map((n, i) => [n, i]));
           filtered = filtered.filter(it => orderMap.has(it.name)).sort((a, b) => orderMap.get(a.name) - orderMap.get(b.name));
         } else if (query) {
           filtered = filtered.filter(it => {
-            const meta = recMetaFor(it.name);
-            const haystack = [it.name, meta.custom_name, recKind(it.name), formatRecTimestamp(recTimestampMs(it))].join(' ').toLowerCase();
+            const haystack = [it.name, it.custom_name || "", recKind(it.name), formatRecTimestamp(recTimestampMs(it)), it.summary || "", it.threat_assessment || ""].join(' ').toLowerCase();
             return haystack.includes(query);
           });
         }
@@ -1732,19 +1769,19 @@
           if (sortMode === 'newest') filtered.sort((a, b) => recTimestampMs(b) - recTimestampMs(a));
           else if (sortMode === 'oldest') filtered.sort((a, b) => recTimestampMs(a) - recTimestampMs(b));
           else if (sortMode === 'name') filtered.sort((a, b) => {
-            const an = (recMetaFor(a.name).custom_name || a.name).toLowerCase();
-            const bn = (recMetaFor(b.name).custom_name || b.name).toLowerCase();
+            const an = (a.custom_name || a.name).toLowerCase();
+            const bn = (b.custom_name || b.name).toLowerCase();
             return an.localeCompare(bn);
           });
           else if (sortMode === 'starred') filtered.sort((a, b) => {
-            const aw = recMetaFor(a.name).flag === 'starred' ? 0 : 1;
-            const bw = recMetaFor(b.name).flag === 'starred' ? 0 : 1;
+            const aw = a.starred ? 0 : 1;
+            const bw = b.starred ? 0 : 1;
             if (aw !== bw) return aw - bw;
             return recTimestampMs(b) - recTimestampMs(a);
           });
           else if (sortMode === 'important') filtered.sort((a, b) => {
-            const aw = recMetaFor(a.name).flag === 'important' ? 0 : 1;
-            const bw = recMetaFor(b.name).flag === 'important' ? 0 : 1;
+            const aw = a.important ? 0 : 1;
+            const bw = b.important ? 0 : 1;
             if (aw !== bw) return aw - bw;
             return recTimestampMs(b) - recTimestampMs(a);
           });
@@ -1753,32 +1790,96 @@
         return filtered;
       }
 
-      function applyFlagVisual(card, flag) {
-        card.classList.remove('flag-starred', 'flag-important');
-        if (flag === 'starred') card.classList.add('flag-starred');
-        if (flag === 'important') card.classList.add('flag-important');
+      function applyCardVisuals(card, item) {
+        card.classList.toggle('flag-starred', !!item.starred);
+        card.classList.toggle('flag-important', !!item.important);
+
         const pillsHost = card.querySelector(".rec-thumb-flags");
         if (pillsHost) {
-          pillsHost.innerHTML = flag === 'starred'
-            ? '<span class="flag-pill star">★</span>'
-            : flag === 'important' ? '<span class="flag-pill alert">!</span>' : '';
+          let pills = "";
+          if (item.starred) pills += '<span class="flag-pill star" title="Starred">★</span>';
+          if (item.important) pills += '<span class="flag-pill alert" title="Important">!</span>';
+          pillsHost.innerHTML = pills;
         }
-        card.querySelectorAll(".flag-btn").forEach(btn => {
-          btn.classList.remove('star', 'alert');
-          if (flag === 'starred') btn.classList.add('star');
-          if (flag === 'important') btn.classList.add('alert');
-          btn.textContent = `${flagIcon(flag)} ${flagLabel(flag)}`;
+
+        card.querySelectorAll(".star-btn").forEach(btn => {
+          btn.classList.toggle('active', !!item.starred);
+          btn.setAttribute('aria-pressed', item.starred ? 'true' : 'false');
+          btn.innerHTML = item.starred ? '★ Starred' : '☆ Star';
         });
+        card.querySelectorAll(".alert-btn").forEach(btn => {
+          btn.classList.toggle('active', !!item.important);
+          btn.setAttribute('aria-pressed', item.important ? 'true' : 'false');
+          btn.innerHTML = item.important ? '! Important' : '! Mark';
+        });
+
+        const displayName = item.custom_name || item.name;
+        card.querySelector(".rec-card-title").textContent = displayName;
+        const nameInput = card.querySelector(".rec-name-input");
+        if (nameInput && document.activeElement !== nameInput) {
+          nameInput.value = item.custom_name || "";
+        }
+
+        const summaryEl = card.querySelector(".rec-summary");
+        const scoreEl = card.querySelector(".rec-score-chip");
+        const statusEl = card.querySelector(".rec-status-line");
+        const status = item.analysis_status || 'pending';
+        const score = (item.threat_score === null || item.threat_score === undefined) ? null : Number(item.threat_score);
+
+        if (statusEl) {
+          if (status === 'done') {
+            statusEl.classList.add('hidden');
+          } else if (status === 'processing') {
+            statusEl.innerHTML = '<span class="rec-spin"></span> Processing…';
+            statusEl.classList.remove('hidden');
+          } else if (status === 'error') {
+            statusEl.textContent = 'Analysis failed';
+            statusEl.classList.remove('hidden');
+          } else {
+            statusEl.textContent = 'Queued for review…';
+            statusEl.classList.remove('hidden');
+          }
+        }
+        if (summaryEl) {
+          if (status === 'done' && item.summary) {
+            summaryEl.textContent = item.summary;
+            summaryEl.classList.remove('hidden');
+          } else {
+            summaryEl.classList.add('hidden');
+            summaryEl.textContent = '';
+          }
+        }
+        if (scoreEl) {
+          if (status === 'done' && score !== null) {
+            scoreEl.textContent = `${score}/100`;
+            scoreEl.dataset.tier = threatTier(score);
+            scoreEl.classList.remove('hidden');
+          } else {
+            scoreEl.classList.add('hidden');
+          }
+        }
+
+        const expandedScore = card.querySelector(".rec-expanded-score");
+        const expandedSummary = card.querySelector(".rec-expanded-summary");
+        const expandedAssessment = card.querySelector(".rec-expanded-assessment");
+        if (expandedScore) {
+          if (status === 'done' && score !== null) {
+            expandedScore.textContent = `${score}/100`;
+            expandedScore.dataset.tier = threatTier(score);
+            expandedScore.classList.remove('hidden');
+          } else {
+            expandedScore.classList.add('hidden');
+          }
+        }
+        if (expandedSummary) expandedSummary.textContent = item.summary || (status === 'done' ? '' : 'Processing…');
+        if (expandedAssessment) expandedAssessment.textContent = item.threat_assessment || '';
       }
 
       function renderRecCard(item) {
-        const meta = recMetaFor(item.name);
         const kind = recKind(item.name);
         const card = document.createElement("article");
         card.className = "rec-card";
         card.dataset.name = item.name;
-
-        const displayName = meta.custom_name || item.name;
 
         card.innerHTML = `
           <div class="rec-thumb">
@@ -1789,18 +1890,30 @@
           <div class="rec-card-body">
             <div class="rec-card-title"></div>
             <div class="rec-card-meta"></div>
+            <div class="rec-summary hidden"></div>
+            <div class="rec-status-line hidden"></div>
+            <div class="rec-score-chip hidden"></div>
           </div>
           <div class="rec-card-actions">
-            <button type="button" class="flag-btn">${flagIcon(meta.flag)} ${flagLabel(meta.flag)}</button>
+            <div class="rec-flag-row">
+              <button type="button" class="star-btn" aria-pressed="false">☆ Star</button>
+              <button type="button" class="alert-btn" aria-pressed="false">! Mark</button>
+            </div>
             <span class="rec-card-meta">Cam 1 · ${item.size_mb} MB</span>
           </div>
           <div class="rec-expanded-body">
             <div class="rec-expanded-head">
               <input type="text" class="rec-name-input" placeholder="Add a name" />
-              <button type="button" class="flag-btn" data-role="flag">${flagIcon(meta.flag)} ${flagLabel(meta.flag)}</button>
+              <button type="button" class="star-btn" aria-pressed="false">☆ Star</button>
+              <button type="button" class="alert-btn" aria-pressed="false">! Mark</button>
               <button type="button" class="rec-close-btn" title="Close">×</button>
             </div>
             <video class="rec-expanded-video" controls preload="metadata" playsinline></video>
+            <div class="rec-expanded-analysis">
+              <div class="rec-expanded-score hidden"></div>
+              <p class="rec-expanded-summary"></p>
+              <p class="rec-expanded-assessment"></p>
+            </div>
             <div class="rec-kv">
               <div class="k">Type</div><div class="v">${kind === 'auto' ? 'Automatic' : 'Manual'}</div>
               <div class="k">Camera</div><div class="v">Cam 1</div>
@@ -1810,20 +1923,23 @@
             </div>
           </div>
         `;
-        card.querySelector(".rec-card-title").textContent = displayName;
         card.querySelector(".rec-card-meta").textContent = formatRecTimestamp(recTimestampMs(item));
-        applyFlagVisual(card, meta.flag);
 
         const nameInput = card.querySelector(".rec-name-input");
-        nameInput.value = meta.custom_name || "";
-
         const thumb = card.querySelector(".rec-thumb");
         thumb.addEventListener("click", function () { openRecExpanded(card, item); });
 
         nameInput.addEventListener("click", e => e.stopPropagation());
         nameInput.addEventListener("input", function () {
-          updateRecMeta(item.name, { custom_name: nameInput.value });
+          const current = itemByName(item.name);
+          if (current) current.custom_name = nameInput.value;
           card.querySelector(".rec-card-title").textContent = nameInput.value || item.name;
+          // Debounce backend save while user is typing
+          const prev = nameInputDebounce.get(item.name);
+          if (prev) clearTimeout(prev);
+          nameInputDebounce.set(item.name, setTimeout(() => {
+            pushRecMeta(item.name, { custom_name: nameInput.value });
+          }, 400));
         });
 
         const closeBtn = card.querySelector(".rec-close-btn");
@@ -1835,19 +1951,28 @@
         }
 
         const expandedBody = card.querySelector(".rec-expanded-body");
-        if (expandedBody) {
-          expandedBody.addEventListener("click", e => e.stopPropagation());
-        }
+        if (expandedBody) expandedBody.addEventListener("click", e => e.stopPropagation());
 
-        card.querySelectorAll(".flag-btn").forEach(btn => {
+        card.querySelectorAll(".star-btn").forEach(btn => {
           btn.addEventListener("click", function (e) {
             e.stopPropagation();
-            const current = recMetaFor(item.name).flag || 'none';
-            const next = FLAG_CYCLE[(FLAG_CYCLE.indexOf(current) + 1) % FLAG_CYCLE.length];
-            updateRecMeta(item.name, { flag: next });
-            applyFlagVisual(card, next);
+            const current = itemByName(item.name);
+            const next = !(current && current.starred);
+            pushRecMeta(item.name, { starred: next });
+            applyCardVisuals(card, itemByName(item.name) || item);
           });
         });
+        card.querySelectorAll(".alert-btn").forEach(btn => {
+          btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            const current = itemByName(item.name);
+            const next = !(current && current.important);
+            pushRecMeta(item.name, { important: next });
+            applyCardVisuals(card, itemByName(item.name) || item);
+          });
+        });
+
+        applyCardVisuals(card, item);
 
         if (expandedRecName === item.name) {
           card.classList.add("expanded");
@@ -1922,44 +2047,31 @@
         recSearchSmartBtn.addEventListener("click", async function () {
           const query = (recSearchInput && recSearchInput.value || '').trim();
           if (!query) { recSearchOrder = null; recSearchStatus = ''; renderRecGrid(); return; }
-          recSearchStatus = "Searching…";
+          recSearchStatus = "Asking the AI…";
           renderRecGrid();
           try {
-            const payload = {
-              query,
-              items: recordingsCache.map(it => {
-                const meta = recMetaFor(it.name);
-                return {
-                  name: it.name,
-                  custom_name: meta.custom_name || "",
-                  kind: recKind(it.name),
-                  timestamp: formatRecTimestamp(recTimestampMs(it)),
-                  flag: meta.flag || "none",
-                };
-              }),
-            };
             const resp = await fetch("/recordings/search", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
+              body: JSON.stringify({ query }),
             });
             const data = await resp.json();
             if (Array.isArray(data.matches)) {
               recSearchOrder = data.matches;
-              recSearchStatus = `Smart search: ${data.matches.length} match${data.matches.length === 1 ? '' : 'es'}`;
+              recSearchStatus = `AI found ${data.matches.length} match${data.matches.length === 1 ? '' : 'es'}`;
             } else if (data.error) {
-              recSearchStatus = `Smart search failed: ${data.error}`;
+              recSearchStatus = `AI search failed: ${data.error}`;
             } else {
-              recSearchStatus = "Smart search returned nothing useful.";
+              recSearchStatus = "AI search returned nothing useful.";
             }
           } catch (err) {
-            recSearchStatus = `Smart search failed: ${err.message || err}`;
+            recSearchStatus = `AI search failed: ${err.message || err}`;
           }
           renderRecGrid();
         });
       }
 
-      function recordingsKeyFor(items) {
+      function listKeyFor(items) {
         return items.map(it => `${it.name}|${it.size_mb}|${it.created_at_ms || 0}`).join(';');
       }
 
@@ -1980,11 +2092,21 @@
           if (previous) recordedSelect.value = previous;
           if (statRecordings) statRecordings.textContent = String(items.length);
 
-          const key = recordingsKeyFor(items);
-          if (key !== recordingsCacheKey) {
+          const key = listKeyFor(items);
+          if (key !== recordingsListKey) {
+            // File list changed (recording added/removed) — rebuild
             recordingsCache = items;
-            recordingsCacheKey = key;
+            recordingsListKey = key;
             renderRecGrid();
+          } else {
+            // Same files; merge meta/analysis changes in place and update cards
+            const prevByName = new Map(recordingsCache.map(it => [it.name, it]));
+            recordingsCache = items;
+            for (const item of items) {
+              if (!recGridEl) continue;
+              const card = recGridEl.querySelector(`.rec-card[data-name="${CSS.escape(item.name)}"]`);
+              if (card) applyCardVisuals(card, item);
+            }
           }
         } catch (_err) { /* ignore */ }
       }

@@ -5,6 +5,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -158,19 +159,179 @@ def get_job(job_id: str) -> dict[str, object] | None:
         return dict(job)
 
 
+def recording_sidecar_path(name: str) -> Path:
+    return RECORDINGS_DIR / f"{name}.json"
+
+
+def read_recording_meta(name: str) -> dict[str, object]:
+    sidecar = recording_sidecar_path(name)
+    if not sidecar.exists():
+        return {}
+    try:
+        with sidecar.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+RECORDING_META_LOCK = threading.Lock()
+
+
+def write_recording_meta(name: str, patch: dict[str, object]) -> dict[str, object]:
+    with RECORDING_META_LOCK:
+        current = read_recording_meta(name)
+        current.update(patch)
+        sidecar = recording_sidecar_path(name)
+        tmp = sidecar.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(current, f, ensure_ascii=False)
+        tmp.replace(sidecar)
+        return current
+
+
 def list_recorded_videos() -> list[dict[str, object]]:
     videos: list[dict[str, object]] = []
     for path in sorted(RECORDINGS_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
         stat = path.stat()
+        meta = read_recording_meta(path.name)
         videos.append(
             {
                 "name": path.name,
                 "url": f"/files/recordings/{path.name}",
                 "created_at_ms": int(stat.st_mtime * 1000),
                 "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                "custom_name": str(meta.get("custom_name", "") or ""),
+                "starred": bool(meta.get("starred", False)),
+                "important": bool(meta.get("important", False)),
+                "analysis_status": str(meta.get("analysis_status", "pending")),
+                "threat_score": meta.get("threat_score"),
+                "summary": str(meta.get("summary", "") or ""),
+                "threat_assessment": str(meta.get("threat_assessment", "") or ""),
+                "analysis_error": str(meta.get("analysis_error", "") or ""),
             }
         )
+    schedule_pending_analyses()
     return videos
+
+
+# ---------------------- Recording auto-analysis ----------------------
+ANALYSIS_QUEUE: "queue.Queue[str]" = queue.Queue()
+ANALYSIS_THREAD_LOCK = threading.Lock()
+ANALYSIS_THREAD: threading.Thread | None = None
+ANALYSIS_IN_FLIGHT: set[str] = set()
+ANALYSIS_INFLIGHT_LOCK = threading.Lock()
+
+
+def parse_recording_analysis(raw_text: str, fallback_score: int) -> dict[str, object]:
+    summary = ""
+    score = fallback_score
+    assessment = ""
+
+    candidates: list[str] = [raw_text.strip()]
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidates.append(fenced.group(1))
+    brace = re.search(r"\{.*\}", raw_text, re.DOTALL)
+    if brace:
+        candidates.append(brace.group(0))
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        maybe_summary = parsed.get("summary")
+        if isinstance(maybe_summary, str) and maybe_summary.strip():
+            summary = maybe_summary.strip()
+        maybe_score = parsed.get("threat_score")
+        if isinstance(maybe_score, (int, float)):
+            score = int(max(0, min(100, round(float(maybe_score)))))
+        maybe_assessment = parsed.get("assessment")
+        if isinstance(maybe_assessment, str) and maybe_assessment.strip():
+            assessment = maybe_assessment.strip()
+        if summary or assessment:
+            break
+
+    if not summary and not assessment:
+        summary = raw_text.strip()[:240]
+    return {"summary": summary, "threat_score": score, "threat_assessment": assessment}
+
+
+def auto_analyze_recording(name: str) -> dict[str, object]:
+    video_path = RECORDINGS_DIR / name
+    if not video_path.exists():
+        raise RuntimeError(f"Recording {name} no longer exists.")
+    frames = sample_frames(str(video_path), 16)
+    mosaic = make_mosaic(frames, n=4, cell_size=224, source_color="rgb")
+    system_prompt = (
+        "You are a vigilant video security analyst reviewing a 4x4 temporal mosaic of a single short clip. "
+        "Output ONLY strict JSON with keys: "
+        '"summary" (one short sentence describing what happens in the clip), '
+        '"threat_score" (integer 0-100), '
+        '"assessment" (one short sentence rating the threat). '
+        "Scoring: 0-20 benign, 21-50 suspicious, 51-80 likely criminal, 81-100 active high-risk threat."
+    )
+    user_prompt = (
+        "Each tile is a successive frame from the same clip. "
+        "Describe what is happening and rate the threat. Return strict JSON only."
+    )
+    raw = query_llamacpp_with_images([mosaic], user_prompt, max_tokens=240, system_prompt=system_prompt)
+    return parse_recording_analysis(raw, fallback_score=0)
+
+
+def analysis_worker_loop() -> None:
+    while True:
+        name = ANALYSIS_QUEUE.get()
+        try:
+            if not (RECORDINGS_DIR / name).exists():
+                continue
+            write_recording_meta(name, {"analysis_status": "processing", "analysis_error": ""})
+            result = auto_analyze_recording(name)
+            write_recording_meta(name, {
+                "analysis_status": "done",
+                "summary": result.get("summary", ""),
+                "threat_score": result.get("threat_score"),
+                "threat_assessment": result.get("threat_assessment", ""),
+                "processed_at_ms": int(time.time() * 1000),
+                "analysis_error": "",
+            })
+        except Exception as exc:
+            try:
+                write_recording_meta(name, {"analysis_status": "error", "analysis_error": str(exc)[:300]})
+            except Exception:
+                pass
+        finally:
+            with ANALYSIS_INFLIGHT_LOCK:
+                ANALYSIS_IN_FLIGHT.discard(name)
+            ANALYSIS_QUEUE.task_done()
+
+
+def ensure_analysis_thread() -> None:
+    global ANALYSIS_THREAD
+    with ANALYSIS_THREAD_LOCK:
+        if ANALYSIS_THREAD is None or not ANALYSIS_THREAD.is_alive():
+            ANALYSIS_THREAD = threading.Thread(target=analysis_worker_loop, daemon=True, name="rec-analyzer")
+            ANALYSIS_THREAD.start()
+
+
+def queue_recording_analysis(name: str) -> None:
+    with ANALYSIS_INFLIGHT_LOCK:
+        if name in ANALYSIS_IN_FLIGHT:
+            return
+        ANALYSIS_IN_FLIGHT.add(name)
+    ensure_analysis_thread()
+    ANALYSIS_QUEUE.put(name)
+
+
+def schedule_pending_analyses() -> None:
+    for path in RECORDINGS_DIR.glob("*.mp4"):
+        meta = read_recording_meta(path.name)
+        status = str(meta.get("analysis_status", "pending"))
+        if status in ("pending", "") or (status == "error" and not meta.get("analysis_error")):
+            queue_recording_analysis(path.name)
 
 
 def load_events() -> list[dict[str, object]]:
@@ -2229,34 +2390,75 @@ def recordings_list():
     return jsonify({"recorded_videos": list_recorded_videos()})
 
 
+@app.post("/recordings/meta")
+def recordings_meta_set():
+    payload = flask_request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "")
+    if not name or not (RECORDINGS_DIR / name).exists():
+        return jsonify({"error": "Recording not found."}), 404
+    patch: dict[str, object] = {}
+    if "custom_name" in payload and isinstance(payload["custom_name"], str):
+        patch["custom_name"] = payload["custom_name"][:200]
+    if "starred" in payload:
+        patch["starred"] = bool(payload["starred"])
+    if "important" in payload:
+        patch["important"] = bool(payload["important"])
+    if not patch:
+        return jsonify({"error": "No supported fields supplied."}), 400
+    meta = write_recording_meta(name, patch)
+    return jsonify({"name": name, "meta": meta})
+
+
+@app.post("/recordings/analyze")
+def recordings_analyze_queue():
+    payload = flask_request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "")
+    if not name or not (RECORDINGS_DIR / name).exists():
+        return jsonify({"error": "Recording not found."}), 404
+    write_recording_meta(name, {"analysis_status": "pending", "analysis_error": ""})
+    queue_recording_analysis(name)
+    return jsonify({"name": name, "analysis_status": "pending"})
+
+
 @app.post("/recordings/search")
 def recordings_search():
     payload = flask_request.get_json(silent=True) or {}
     query = str(payload.get("query") or "").strip()
-    raw_items = payload.get("items") if isinstance(payload, dict) else None
-    items = raw_items if isinstance(raw_items, list) else []
+    items = list_recorded_videos()
     if not query or not items:
-        return jsonify({"matches": [str(it.get("name", "")) for it in items if isinstance(it, dict) and it.get("name")]})
+        return jsonify({"matches": [it["name"] for it in items]})
+
+    def humanize_ts(ms: object) -> str:
+        try:
+            return datetime.fromtimestamp(int(ms) / 1000).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return ""
 
     lines: list[str] = []
     for it in items:
-        if not isinstance(it, dict):
-            continue
-        name = str(it.get("name", ""))
-        if not name:
-            continue
+        name = it["name"]
         custom = str(it.get("custom_name", "") or "")
-        kind = str(it.get("kind", "") or "")
-        ts = str(it.get("timestamp", "") or "")
-        flag = str(it.get("flag", "") or "")
-        lines.append(f"- name={name} | custom={custom} | kind={kind} | captured={ts} | flag={flag}")
+        kind = "auto" if name.startswith("auto_") else "manual"
+        ts = humanize_ts(it.get("created_at_ms"))
+        summary = str(it.get("summary", "") or "")
+        threat_score = it.get("threat_score")
+        score_part = f" | threat={threat_score}" if isinstance(threat_score, (int, float)) else ""
+        flags: list[str] = []
+        if it.get("starred"):
+            flags.append("starred")
+        if it.get("important"):
+            flags.append("important")
+        flag_part = f" | flags={','.join(flags)}" if flags else ""
+        summary_part = f' | summary="{summary}"' if summary else ""
+        lines.append(f"- name={name} | custom={custom} | kind={kind} | captured={ts}{score_part}{flag_part}{summary_part}")
 
     system_prompt = (
         "You are a search assistant for a small library of surveillance recordings. "
-        "Given a user query and a list of recordings, return strict JSON: "
-        '{"matches": ["filename1", ...]} listing the matching filenames in order of relevance. '
-        "Use intent, not just literal keywords. Only include filenames from the provided list. "
-        "If nothing matches, return {\"matches\": []}."
+        "Each recording has a one-sentence summary describing what happened in it. "
+        "Given a user query and the list, return strict JSON: "
+        '{"matches": ["filename1", ...]} listing matching filenames ordered by relevance. '
+        "Use the summaries to match on intent (what is described), not just keywords. "
+        "Only include filenames from the provided list. If nothing matches, return {\"matches\": []}."
     )
     user_prompt = (
         f"User query: {query}\n\n"
@@ -2281,7 +2483,7 @@ def recordings_search():
             except Exception:
                 parsed = None
     if isinstance(parsed, dict) and isinstance(parsed.get("matches"), list):
-        allowed = {str(it.get("name")) for it in items if isinstance(it, dict)}
+        allowed = {it["name"] for it in items}
         for m in parsed["matches"]:
             s = str(m).strip()
             if s in allowed and s not in matches:

@@ -70,10 +70,14 @@ AUTONOMOUS_MAX_CLIP_S = max(5.0, float(os.getenv("AUTONOMOUS_MAX_CLIP_S", "180.0
 
 CAMERA_CONTEXT = os.getenv(
     "CAMERA_CONTEXT",
-    "This camera covers a restricted area. Only cleanup crew and maintenance staff are authorized to be present. "
-    "Anyone else, anyone loitering, anyone tampering with equipment, or any signs of conflict/violence should be treated as suspicious and rated higher on the threat scale.",
+    "This camera covers the back area of a school. The expected baseline is a small number of staff (custodial / maintenance / coaches) walking through calmly. "
+    "Students gathering, fighting, hitting each other, brandishing sticks or objects, sneaking in or out, vandalizing, or any kind of physical altercation are all serious safety incidents and must score high.",
 )
-RECORDING_ANALYSIS_GRID_N = max(2, int(os.getenv("RECORDING_ANALYSIS_GRID_N", "6")))
+RECORDING_ANALYSIS_GRID_N = max(2, int(os.getenv("RECORDING_ANALYSIS_GRID_N", "4")))
+RECORDING_ANALYSIS_CELL_PX = max(192, int(os.getenv("RECORDING_ANALYSIS_CELL_PX", "384")))
+RECORDING_ANALYSIS_MOTION_BIAS = float(os.getenv("RECORDING_ANALYSIS_MOTION_BIAS", "0.85"))
+RECORDING_ANALYSIS_FRAMES = max(4, int(os.getenv("RECORDING_ANALYSIS_FRAMES", "12")))
+RECORDING_ANALYSIS_SAMPLE_POOL = max(60, int(os.getenv("RECORDING_ANALYSIS_SAMPLE_POOL", "400")))
 AUTONOMOUS_PROMPT = os.getenv(
     "AUTONOMOUS_PROMPT",
     "Analyze this surveillance clip for suspicious activity or potential threats (theft, arson, vandalism, trespassing, assault, weapons).",
@@ -316,55 +320,73 @@ def sample_frames_for_analysis(video_path: str, target: int = 16) -> list[np.nda
         return [np.array(Image.open(p).convert("RGB")) for p in picks]
 
 
+def _motion_weighted_pick(frames: list[np.ndarray], target: int, motion_bias: float) -> list[np.ndarray]:
+    if len(frames) <= target:
+        return frames
+    diffs: list[float] = [0.0] * len(frames)
+    for i in range(1, len(frames)):
+        a = frames[i - 1].astype(np.int16)
+        b = frames[i].astype(np.int16)
+        diffs[i] = float(np.abs(b - a).mean())
+    motion_bias = min(0.95, max(0.0, motion_bias))
+    n_motion = int(round(target * motion_bias))
+    n_even = max(1, target - n_motion)
+    even_indices = set(int(i) for i in np.linspace(0, len(frames) - 1, n_even, dtype=int))
+    motion_ranked = sorted(range(len(frames)), key=lambda i: diffs[i], reverse=True)
+    picked: set[int] = set(even_indices)
+    for idx in motion_ranked:
+        if len(picked) >= target:
+            break
+        picked.add(idx)
+    return [frames[i] for i in sorted(picked)]
+
+
+def _motion_only_pick(frames: list[np.ndarray], target: int) -> list[np.ndarray]:
+    if len(frames) <= target:
+        return frames
+    diffs: list[float] = [0.0] * len(frames)
+    for i in range(1, len(frames)):
+        a = frames[i - 1].astype(np.int16)
+        b = frames[i].astype(np.int16)
+        diffs[i] = float(np.abs(b - a).mean())
+    top_idx = sorted(sorted(range(len(frames)), key=lambda i: diffs[i], reverse=True)[:target])
+    return [frames[i] for i in top_idx]
+
+
 def auto_analyze_recording(name: str) -> dict[str, object]:
     video_path = RECORDINGS_DIR / name
     if not video_path.exists():
         raise RuntimeError(f"Recording {name} no longer exists.")
-    target_frames = RECORDING_ANALYSIS_GRID_N * RECORDING_ANALYSIS_GRID_N
-    frames = sample_frames_for_analysis(str(video_path), target=target_frames)
-    if len(frames) >= target_frames:
-        grid_n = RECORDING_ANALYSIS_GRID_N
-    elif len(frames) >= 16:
-        grid_n = 4
-    elif len(frames) >= 9:
-        grid_n = 3
-    elif len(frames) >= 4:
-        grid_n = 2
-    else:
-        grid_n = 1
-    mosaic = make_mosaic(frames, n=grid_n, cell_size=224, source_color="rgb")
+    raw_frames = sample_frames_for_analysis(str(video_path), target=RECORDING_ANALYSIS_SAMPLE_POOL)
+    picked = _motion_only_pick(raw_frames, RECORDING_ANALYSIS_FRAMES)
+    images = [Image.fromarray(f) for f in picked]
+    n = len(images)
+
     system_prompt = (
-        "You are a vigilant video security analyst reviewing a temporal mosaic of a single short surveillance clip. "
-        f"Each tile is a successive frame; the mosaic is {grid_n}x{grid_n}, read left-to-right, top-to-bottom. "
-        "CAMERA CONTEXT (treat as ground truth about who is allowed here and what is normal): "
-        f"{CAMERA_CONTEXT} "
-        "ACTIVELY SCAN every frame for any of these threat indicators, and call them out by name in your assessment if present:\n"
-        "- VIOLENCE: one person hitting, kicking, shoving, grabbing, choking, dragging, or pinning another; people fighting or wrestling; someone falling/lying on the ground after contact; a group surrounding or cornering a person; sudden lunging movement toward another person.\n"
-        "- WEAPONS / IMPROVISED WEAPONS: anyone holding, raising, or swinging a stick, bat, pipe, bottle, knife, gun, or other object that could be used as a weapon. Even a hand-held stick around another person should be treated as a weapon.\n"
-        "- THEFT / BURGLARY: carrying away tools, parts, packages, or boxes; opening lockers/containers/vehicles that aren't theirs; reaching into bags; pocketing items.\n"
-        "- VANDALISM / PROPERTY DAMAGE: striking, kicking, spraying, breaking, or marking equipment/walls/vehicles.\n"
-        "- ARSON: holding a lighter, match, or flame near anything; smoke or fire in frame.\n"
-        "- TRESPASSING / LOITERING: anyone present who doesn't match the authorized profile in the camera context; lingering with no apparent task; hiding from view; running from view.\n"
-        "- TAMPERING: opening panels/cabinets, disconnecting cables, touching machinery in non-routine ways.\n"
-        "If you see ANY violent contact or weapon-like object in someone's hand, the threat_score MUST be at least 75 and assessment MUST mention what you saw. "
-        "Output ONLY strict JSON with keys: "
-        '"summary" (one short sentence describing what happens in the clip — describe what people do, not just where they are), '
-        '"threat_score" (integer 0-100), '
-        '"assessment" (one short sentence naming the specific threat indicator seen, or explaining why the clip is benign). '
-        "Scoring guide (apply with the camera context in mind): "
-        "0-20 benign authorized activity only; "
-        "21-50 unauthorized presence or pre-incident behavior (loitering, lurking, peeking in); "
-        "51-80 active suspicious or criminal activity (theft, vandalism, brandishing a stick/object); "
-        "81-100 active high-risk threat (assault, fighting, weapon swung at a person, arson, robbery). "
-        "An unauthorized person in a restricted area should rarely be below 30. "
-        "When in doubt between two ranges, choose the higher one if any threat indicator above is plausible."
+        f"You are a vigilant video security analyst examining {n} still frames sampled from a single short surveillance clip, in chronological order. "
+        f"CAMERA CONTEXT: {CAMERA_CONTEXT} "
+        "READ THESE HARD RULES CAREFULLY AND APPLY THEM:\n"
+        "RULE A — POSTURE CHANGE = ASSAULT. If across the frames you see one person change from upright to bent-over / crouched / on the ground while a SECOND person is close by or standing over them, that is an ASSAULT in progress. Do NOT explain it as 'picking something up' or 'stretching'. Score >= 75 and name 'physical assault' in the assessment. This is the most important rule.\n"
+        "RULE B — PROXIMITY = FIGHT. If two unauthorized people are within arm's reach of each other for any frame, treat it as physical contact / fight. Score >= 60.\n"
+        "RULE C — HELD OBJECT = WEAPON. Any rigid object held by a person (stick, pole, bat, pipe, rod, board, broom handle, bottle, brick, knife, gun) is a weapon. Even one frame is enough. Score >= 75 and name the object.\n"
+        "RULE D — RUNNING AWAY = AFTERMATH. If a person sprints out of frame after being near another person, treat as aftermath of a confrontation. Score >= 60.\n"
+        "RULE E — UNAUTHORIZED PRESENCE BASELINE. Two non-staff people present in this back-of-school area is already 30+. Add 30 if rule A/B/C/D fires.\n"
+        "BAN: do NOT use the words 'no clear evidence', 'no clear physical', 'no signs of', 'appears to', 'possibly', 'might be' in the assessment when ANY of the above rules fire — those phrases lower the perceived threat unfairly.\n"
+        "Output ONLY strict JSON: "
+        '{"summary": "one short sentence on what happens", "threat_score": integer 0-100, "assessment": "one short sentence naming the indicator and the rule"}.\n'
+        "Scoring scale:\n"
+        "0-20: a single authorized staff person walking calmly with no contact.\n"
+        "21-50: unauthorized presence, no contact.\n"
+        "51-75: physical contact, grabbing, shoving, weapon visible.\n"
+        "76-100: confirmed fight / hit / kick / swing / person knocked down / weapon used against another person.\n"
+        "Be DECISIVE. Under-scoring a real altercation is failure."
     )
     user_prompt = (
-        "Scan every tile for the threat indicators listed in the system prompt. "
-        "Pay extra attention to people's hands (objects, weapons), interactions between people (contact, conflict, restraint), "
-        "and any object held high or swung. Describe what is happening and rate the threat. Return strict JSON only."
+        f"You are looking at {n} chronological frames. Identify each person and their posture in every frame. "
+        "Apply rules A through E. If posture changes (upright -> bent / ground) while another person is near, that is rule A and you score >= 75. "
+        "Return strict JSON only."
     )
-    raw = query_llamacpp_with_images([mosaic], user_prompt, max_tokens=280, system_prompt=system_prompt)
+    raw = query_llamacpp_with_images(images, user_prompt, max_tokens=400, system_prompt=system_prompt, temperature=0.0)
     return parse_recording_analysis(raw, fallback_score=0)
 
 
@@ -1834,6 +1856,7 @@ def query_llamacpp_with_images(
     prompt: str,
     max_tokens: int = 192,
     system_prompt: str | None = None,
+    temperature: float = 0.2,
 ) -> str:
     if not images:
         raise RuntimeError(
@@ -1855,7 +1878,7 @@ def query_llamacpp_with_images(
         "model": LLAMACPP_MODEL,
         "messages": messages,
         "max_tokens": max_tokens,
-        "temperature": 0.2,
+        "temperature": temperature,
         "stream": False,
         "chat_template_kwargs": {"enable_thinking": False},
     }

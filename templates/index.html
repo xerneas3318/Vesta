@@ -348,6 +348,123 @@
     .greet-text { display: block; }
     .greet-date { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.1px; }
 
+    /* ---------- Recordings library ---------- */
+    .recordings-toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      flex-wrap: wrap;
+    }
+    .rec-search {
+      display: flex; align-items: center; gap: 8px; flex: 1; min-width: 280px;
+    }
+    .rec-search input[type="search"] {
+      flex: 1;
+      padding: 10px 14px; border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-sunk);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .rec-search input[type="search"]:focus {
+      outline: none; border-color: var(--accent); background: var(--surface-card);
+    }
+    .rec-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .rec-control { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); }
+    .rec-control select {
+      padding: 8px 10px; border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface-sunk); color: var(--text);
+      font-size: 13px;
+    }
+    .rec-search-status { margin: 0; font-style: italic; }
+    .rec-empty { text-align: center; color: var(--text-muted); display: none; }
+    .rec-empty.show { display: block; }
+
+    .rec-grid {
+      display: grid; gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+    .rec-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      display: flex; flex-direction: column;
+    }
+    .rec-card.expanded { grid-column: 1 / -1; }
+    .rec-card.flag-starred { border-color: rgba(245, 200, 80, 0.55); box-shadow: 0 0 0 1px rgba(245, 200, 80, 0.18) inset; }
+    .rec-card.flag-important { border-color: rgba(220, 90, 90, 0.55); box-shadow: 0 0 0 1px rgba(220, 90, 90, 0.18) inset; }
+    .rec-card:hover { border-color: var(--accent); }
+    .rec-thumb {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: #14110d;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .rec-thumb svg { width: 42px; height: 42px; opacity: 0.45; }
+    .rec-thumb .rec-thumb-type {
+      position: absolute; top: 10px; left: 10px;
+      padding: 4px 8px; border-radius: 999px;
+      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+      background: rgba(0,0,0,0.55); color: #fff;
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    }
+    .rec-thumb .rec-thumb-type.auto { background: rgba(120, 90, 200, 0.78); }
+    .rec-thumb .rec-thumb-type.manual { background: rgba(60, 130, 200, 0.78); }
+    .rec-thumb-flags {
+      position: absolute; top: 10px; right: 10px;
+      display: flex; gap: 6px;
+    }
+    .rec-thumb-flags .flag-pill {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); color: #fff; font-size: 14px;
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    }
+    .rec-thumb-flags .flag-pill.star { background: rgba(245, 200, 80, 0.85); color: #2b1f00; }
+    .rec-thumb-flags .flag-pill.alert { background: rgba(220, 90, 90, 0.9); color: #fff; }
+
+    .rec-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+    .rec-card-title {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .rec-card-meta { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+    .rec-card-actions { display: flex; align-items: center; justify-content: space-between; padding: 0 14px 12px; gap: 8px; }
+    .rec-card-actions .flag-btn {
+      background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+      padding: 4px 10px; border-radius: 999px; cursor: pointer;
+      font-size: 14px; transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+    }
+    .rec-card-actions .flag-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .rec-card-actions .flag-btn.star { border-color: rgba(245, 200, 80, 0.65); color: rgb(220, 175, 70); background: rgba(245, 200, 80, 0.12); }
+    .rec-card-actions .flag-btn.alert { border-color: rgba(220, 90, 90, 0.65); color: rgb(200, 70, 70); background: rgba(220, 90, 90, 0.12); }
+
+    .rec-expanded-body {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 14px;
+      gap: 14px;
+    }
+    .rec-card.expanded .rec-expanded-body { display: grid; grid-template-columns: minmax(320px, 1.4fr) 1fr; }
+    @media (max-width: 720px) {
+      .rec-card.expanded .rec-expanded-body { grid-template-columns: 1fr; }
+    }
+    .rec-expanded-video { width: 100%; border-radius: 12px; background: #14110d; border: 1px solid var(--border); max-height: 480px; object-fit: contain; }
+    .rec-expanded-info { display: flex; flex-direction: column; gap: 10px; }
+    .rec-name-input {
+      width: 100%;
+      padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-sunk); color: var(--text);
+      font-size: 14px; font-weight: 600;
+    }
+    .rec-name-input:focus { outline: none; border-color: var(--accent); background: var(--surface-card); }
+    .rec-kv { font-family: var(--mono); font-size: 12px; line-height: 1.55; color: var(--text); display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+    .rec-kv .k { color: var(--text-muted); }
+
     /* ---------- Recording viewer ---------- */
     .recording-player {
       width: 100%; border-radius: 12px; background: #14110d;
@@ -997,6 +1114,10 @@
         <span class="rail-ico"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="2.5" width="6" height="6" rx="1.4"/><rect x="9.5" y="2.5" width="6" height="6" rx="1.4"/><rect x="2.5" y="9.5" width="6" height="6" rx="1.4"/><rect x="9.5" y="9.5" width="6" height="6" rx="1.4"/></svg></span>
         Live
       </button>
+      <button class="rail-item" data-screen="recordings">
+        <span class="rail-ico"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="13" height="11" rx="1.6"/><path d="M7.5 6.5v5l4-2.5-4-2.5z" fill="currentColor"/></svg></span>
+        Recordings
+      </button>
       <button class="rail-item" data-screen="analyze">
         <span class="rail-ico"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 9h2l2-5 4 10 2-5h4"/></svg></span>
         Analysis
@@ -1196,6 +1317,48 @@
             <div id="recording_empty" class="note" style="margin-top:8px;">No recordings yet.</div>
             <ul id="recording_list" class="recording-list"></ul>
           </div>
+        </section>
+
+        <!-- ====================== RECORDINGS SCREEN ====================== -->
+        <section class="screen" data-screen="recordings">
+          <header class="screen-head">
+            <div class="screen-eyebrow">Library</div>
+            <h1 class="screen-title">Recordings</h1>
+            <p class="screen-body">Every saved clip from Cam 1. Click a tile to expand. Flag with a star or an alert and search by name or meaning.</p>
+          </header>
+
+          <div class="recordings-toolbar">
+            <div class="rec-search">
+              <input id="rec_search_input" type="search" placeholder="Search by name, type, or what happened…" />
+              <button id="rec_search_smart" type="button" class="btn ghost" title="Use the LLM to find recordings by intent">Smart search</button>
+            </div>
+            <div class="rec-controls">
+              <label class="rec-control">
+                <span>Sort</span>
+                <select id="rec_sort">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="starred">Starred first</option>
+                  <option value="important">Important first</option>
+                  <option value="name">Name (A–Z)</option>
+                </select>
+              </label>
+              <label class="rec-control">
+                <span>Show</span>
+                <select id="rec_filter">
+                  <option value="all">All</option>
+                  <option value="auto">Auto-recorded</option>
+                  <option value="manual">Manual</option>
+                  <option value="starred">Starred</option>
+                  <option value="important">Important</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <p id="rec_search_status" class="note rec-search-status hidden"></p>
+          <div id="rec_empty" class="card padded rec-empty">No recordings match.</div>
+          <div id="rec_grid" class="rec-grid"></div>
         </section>
 
         <!-- ====================== ANALYSIS SCREEN ====================== -->
@@ -1483,12 +1646,271 @@
         videoUpload.disabled = usingRecorded;
       }
 
+      // ---------- Recordings library state ----------
+      const REC_META_KEY = 'recordings-meta';
+      const FLAG_CYCLE = ['none', 'starred', 'important'];
+      let recordingsCache = [];
+      let recSearchOrder = null;
+      let recSearchStatus = '';
+
+      function loadRecMeta() {
+        try {
+          const raw = localStorage.getItem(REC_META_KEY);
+          if (raw) return JSON.parse(raw) || {};
+        } catch (_e) {}
+        return {};
+      }
+      function saveRecMeta(map) {
+        try { localStorage.setItem(REC_META_KEY, JSON.stringify(map)); } catch (_e) {}
+      }
+      function recMetaFor(name) {
+        const map = loadRecMeta();
+        return map[name] || { custom_name: "", flag: "none" };
+      }
+      function updateRecMeta(name, patch) {
+        const map = loadRecMeta();
+        const current = map[name] || { custom_name: "", flag: "none" };
+        map[name] = Object.assign({}, current, patch);
+        saveRecMeta(map);
+      }
+
+      function recKind(name) { return String(name || "").startsWith("auto_") ? "auto" : "manual"; }
+      function recTimestampMs(item) { return Number(item.created_at_ms || 0); }
+      function formatRecTimestamp(ms) {
+        if (!ms) return "—";
+        try {
+          const d = new Date(ms);
+          return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        } catch (_e) { return "—"; }
+      }
+      function flagIcon(flag) {
+        if (flag === 'starred') return '★';
+        if (flag === 'important') return '⚠';
+        return '☆';
+      }
+      function flagLabel(flag) {
+        if (flag === 'starred') return 'Starred';
+        if (flag === 'important') return 'Important';
+        return 'Flag';
+      }
+
+      function applyRecSortAndFilter(items) {
+        const sortMode = (recSortSel && recSortSel.value) || 'newest';
+        const filterMode = (recFilterSel && recFilterSel.value) || 'all';
+        const query = (recSearchInput && recSearchInput.value || '').trim().toLowerCase();
+
+        let filtered = items.slice();
+        if (filterMode === 'auto') filtered = filtered.filter(it => recKind(it.name) === 'auto');
+        else if (filterMode === 'manual') filtered = filtered.filter(it => recKind(it.name) === 'manual');
+        else if (filterMode === 'starred') filtered = filtered.filter(it => recMetaFor(it.name).flag === 'starred');
+        else if (filterMode === 'important') filtered = filtered.filter(it => recMetaFor(it.name).flag === 'important');
+
+        if (recSearchOrder) {
+          const orderMap = new Map(recSearchOrder.map((n, i) => [n, i]));
+          filtered = filtered.filter(it => orderMap.has(it.name)).sort((a, b) => orderMap.get(a.name) - orderMap.get(b.name));
+        } else if (query) {
+          filtered = filtered.filter(it => {
+            const meta = recMetaFor(it.name);
+            const haystack = [it.name, meta.custom_name, recKind(it.name), formatRecTimestamp(recTimestampMs(it))].join(' ').toLowerCase();
+            return haystack.includes(query);
+          });
+        }
+
+        if (!recSearchOrder) {
+          if (sortMode === 'newest') filtered.sort((a, b) => recTimestampMs(b) - recTimestampMs(a));
+          else if (sortMode === 'oldest') filtered.sort((a, b) => recTimestampMs(a) - recTimestampMs(b));
+          else if (sortMode === 'name') filtered.sort((a, b) => {
+            const an = (recMetaFor(a.name).custom_name || a.name).toLowerCase();
+            const bn = (recMetaFor(b.name).custom_name || b.name).toLowerCase();
+            return an.localeCompare(bn);
+          });
+          else if (sortMode === 'starred') filtered.sort((a, b) => {
+            const aw = recMetaFor(a.name).flag === 'starred' ? 0 : 1;
+            const bw = recMetaFor(b.name).flag === 'starred' ? 0 : 1;
+            if (aw !== bw) return aw - bw;
+            return recTimestampMs(b) - recTimestampMs(a);
+          });
+          else if (sortMode === 'important') filtered.sort((a, b) => {
+            const aw = recMetaFor(a.name).flag === 'important' ? 0 : 1;
+            const bw = recMetaFor(b.name).flag === 'important' ? 0 : 1;
+            if (aw !== bw) return aw - bw;
+            return recTimestampMs(b) - recTimestampMs(a);
+          });
+        }
+
+        return filtered;
+      }
+
+      function renderRecCard(item) {
+        const meta = recMetaFor(item.name);
+        const kind = recKind(item.name);
+        const card = document.createElement("article");
+        card.className = "rec-card";
+        if (meta.flag === 'starred') card.classList.add('flag-starred');
+        if (meta.flag === 'important') card.classList.add('flag-important');
+        card.dataset.name = item.name;
+
+        const displayName = meta.custom_name || item.name;
+        const flagPills = meta.flag === 'starred'
+          ? '<span class="flag-pill star">★</span>'
+          : meta.flag === 'important' ? '<span class="flag-pill alert">!</span>' : '';
+
+        card.innerHTML = `
+          <div class="rec-thumb">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.6"/><path d="M10 9.5v5l5-2.5-5-2.5z" fill="currentColor"/></svg>
+            <span class="rec-thumb-type ${kind}">${kind === 'auto' ? 'Auto' : 'Manual'}</span>
+            <span class="rec-thumb-flags">${flagPills}</span>
+          </div>
+          <div class="rec-card-body">
+            <div class="rec-card-title"></div>
+            <div class="rec-card-meta"></div>
+          </div>
+          <div class="rec-card-actions">
+            <button type="button" class="flag-btn ${meta.flag === 'none' ? '' : meta.flag}">${flagIcon(meta.flag)} ${flagLabel(meta.flag)}</button>
+            <span class="rec-card-meta">Cam 1 · ${item.size_mb} MB</span>
+          </div>
+          <div class="rec-expanded-body">
+            <video class="rec-expanded-video" controls preload="metadata"></video>
+            <div class="rec-expanded-info">
+              <input type="text" class="rec-name-input" placeholder="Add a name" />
+              <div class="rec-kv">
+                <div class="k">Type</div><div class="v">${kind === 'auto' ? 'Automatic' : 'Manual'}</div>
+                <div class="k">Camera</div><div class="v">Cam 1</div>
+                <div class="k">Captured</div><div class="v">${formatRecTimestamp(recTimestampMs(item))}</div>
+                <div class="k">Size</div><div class="v">${item.size_mb} MB</div>
+                <div class="k">File</div><div class="v">${item.name}</div>
+              </div>
+            </div>
+          </div>
+        `;
+        card.querySelector(".rec-card-title").textContent = displayName;
+        card.querySelector(".rec-card-meta").textContent = formatRecTimestamp(recTimestampMs(item));
+        const nameInput = card.querySelector(".rec-name-input");
+        nameInput.value = meta.custom_name || "";
+
+        const thumb = card.querySelector(".rec-thumb");
+        thumb.addEventListener("click", function () { toggleRecExpanded(card, item); });
+        card.querySelector(".rec-card-body").addEventListener("click", function () { toggleRecExpanded(card, item); });
+
+        nameInput.addEventListener("click", e => e.stopPropagation());
+        nameInput.addEventListener("input", function () {
+          updateRecMeta(item.name, { custom_name: nameInput.value });
+          card.querySelector(".rec-card-title").textContent = nameInput.value || item.name;
+        });
+
+        const flagBtn = card.querySelector(".flag-btn");
+        flagBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          const current = recMetaFor(item.name).flag || 'none';
+          const next = FLAG_CYCLE[(FLAG_CYCLE.indexOf(current) + 1) % FLAG_CYCLE.length];
+          updateRecMeta(item.name, { flag: next });
+          renderRecGrid();
+        });
+
+        return card;
+      }
+
+      function toggleRecExpanded(card, item) {
+        const wasExpanded = card.classList.contains("expanded");
+        document.querySelectorAll(".rec-card.expanded").forEach(el => {
+          el.classList.remove("expanded");
+          const v = el.querySelector("video");
+          if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+        });
+        if (!wasExpanded) {
+          card.classList.add("expanded");
+          const video = card.querySelector("video");
+          if (video) {
+            video.src = item.url || `/files/recordings/${encodeURIComponent(item.name)}`;
+            video.play().catch(() => {});
+          }
+        }
+      }
+
+      function renderRecGrid() {
+        if (!recGridEl) return;
+        const items = applyRecSortAndFilter(recordingsCache);
+        recGridEl.innerHTML = "";
+        for (const item of items) recGridEl.appendChild(renderRecCard(item));
+        if (recEmptyEl) recEmptyEl.classList.toggle("show", items.length === 0);
+        if (recSearchStatusEl) {
+          if (recSearchStatus) {
+            recSearchStatusEl.textContent = recSearchStatus;
+            recSearchStatusEl.classList.remove("hidden");
+          } else {
+            recSearchStatusEl.classList.add("hidden");
+          }
+        }
+      }
+
+      const recGridEl = document.getElementById("rec_grid");
+      const recEmptyEl = document.getElementById("rec_empty");
+      const recSearchInput = document.getElementById("rec_search_input");
+      const recSearchSmartBtn = document.getElementById("rec_search_smart");
+      const recSearchStatusEl = document.getElementById("rec_search_status");
+      const recSortSel = document.getElementById("rec_sort");
+      const recFilterSel = document.getElementById("rec_filter");
+
+      let recSearchDebounce = null;
+      if (recSearchInput) {
+        recSearchInput.addEventListener("input", function () {
+          recSearchOrder = null;
+          recSearchStatus = '';
+          clearTimeout(recSearchDebounce);
+          recSearchDebounce = setTimeout(renderRecGrid, 120);
+        });
+      }
+      if (recSortSel) recSortSel.addEventListener("change", renderRecGrid);
+      if (recFilterSel) recFilterSel.addEventListener("change", renderRecGrid);
+
+      if (recSearchSmartBtn) {
+        recSearchSmartBtn.addEventListener("click", async function () {
+          const query = (recSearchInput && recSearchInput.value || '').trim();
+          if (!query) { recSearchOrder = null; recSearchStatus = ''; renderRecGrid(); return; }
+          recSearchStatus = "Searching…";
+          renderRecGrid();
+          try {
+            const payload = {
+              query,
+              items: recordingsCache.map(it => {
+                const meta = recMetaFor(it.name);
+                return {
+                  name: it.name,
+                  custom_name: meta.custom_name || "",
+                  kind: recKind(it.name),
+                  timestamp: formatRecTimestamp(recTimestampMs(it)),
+                  flag: meta.flag || "none",
+                };
+              }),
+            };
+            const resp = await fetch("/recordings/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+            if (Array.isArray(data.matches)) {
+              recSearchOrder = data.matches;
+              recSearchStatus = `Smart search: ${data.matches.length} match${data.matches.length === 1 ? '' : 'es'}`;
+            } else if (data.error) {
+              recSearchStatus = `Smart search failed: ${data.error}`;
+            } else {
+              recSearchStatus = "Smart search returned nothing useful.";
+            }
+          } catch (err) {
+            recSearchStatus = `Smart search failed: ${err.message || err}`;
+          }
+          renderRecGrid();
+        });
+      }
+
       async function refreshRecordedVideos(preferredName) {
         try {
           const resp = await fetch("/recordings/list", { cache: "no-store" });
           if (!resp.ok) return;
           const data = await resp.json();
           const items = Array.isArray(data.recorded_videos) ? data.recorded_videos : [];
+          recordingsCache = items;
           const previous = preferredName || recordedSelect.value;
           recordedSelect.innerHTML = "<option value=''>Select recorded video</option>";
           for (const item of items) {
@@ -1523,6 +1945,8 @@
             }
             if (recordingEmpty) recordingEmpty.style.display = items.length === 0 ? "" : "none";
           }
+
+          renderRecGrid();
         } catch (_err) { /* ignore */ }
       }
 

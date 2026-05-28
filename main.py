@@ -1621,6 +1621,37 @@ def query_llamacpp(mosaic: Image.Image, prompt: str, max_tokens: int = 192, syst
     return query_llamacpp_with_images([mosaic], prompt, max_tokens=max_tokens, system_prompt=system_prompt)
 
 
+def query_llamacpp_text(prompt: str, system_prompt: str | None = None, max_tokens: int = 256) -> str:
+    messages: list[dict[str, object]] = []
+    if system_prompt and system_prompt.strip():
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    payload = {
+        "model": LLAMACPP_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.1,
+        "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    endpoint = f"{LLAMACPP_BASE_URL.rstrip('/')}/v1/chat/completions"
+    req = request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"llama.cpp server error ({exc.code}): {detail}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Could not reach llama.cpp at {endpoint}.") from exc
+    return parse_llamacpp_caption(body)
+
+
 def summarize_mosaic_answers(first_mosaic: Image.Image | None, mosaic_answers: str) -> str:
     if first_mosaic is None:
         raise RuntimeError("No first mosaic available.")
@@ -2196,6 +2227,66 @@ def recordings_stop():
 @app.get("/recordings/list")
 def recordings_list():
     return jsonify({"recorded_videos": list_recorded_videos()})
+
+
+@app.post("/recordings/search")
+def recordings_search():
+    payload = flask_request.get_json(silent=True) or {}
+    query = str(payload.get("query") or "").strip()
+    raw_items = payload.get("items") if isinstance(payload, dict) else None
+    items = raw_items if isinstance(raw_items, list) else []
+    if not query or not items:
+        return jsonify({"matches": [str(it.get("name", "")) for it in items if isinstance(it, dict) and it.get("name")]})
+
+    lines: list[str] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", ""))
+        if not name:
+            continue
+        custom = str(it.get("custom_name", "") or "")
+        kind = str(it.get("kind", "") or "")
+        ts = str(it.get("timestamp", "") or "")
+        flag = str(it.get("flag", "") or "")
+        lines.append(f"- name={name} | custom={custom} | kind={kind} | captured={ts} | flag={flag}")
+
+    system_prompt = (
+        "You are a search assistant for a small library of surveillance recordings. "
+        "Given a user query and a list of recordings, return strict JSON: "
+        '{"matches": ["filename1", ...]} listing the matching filenames in order of relevance. '
+        "Use intent, not just literal keywords. Only include filenames from the provided list. "
+        "If nothing matches, return {\"matches\": []}."
+    )
+    user_prompt = (
+        f"User query: {query}\n\n"
+        "Recordings:\n" + "\n".join(lines) + "\n\n"
+        "Return only strict JSON with the matches array."
+    )
+    try:
+        raw = query_llamacpp_text(user_prompt, system_prompt=system_prompt, max_tokens=400)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "matches": []}), 200
+
+    text = raw.strip()
+    matches: list[str] = []
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+        parsed = None
+        if match:
+            try:
+                parsed = json.loads(match.group(0))
+            except Exception:
+                parsed = None
+    if isinstance(parsed, dict) and isinstance(parsed.get("matches"), list):
+        allowed = {str(it.get("name")) for it in items if isinstance(it, dict)}
+        for m in parsed["matches"]:
+            s = str(m).strip()
+            if s in allowed and s not in matches:
+                matches.append(s)
+    return jsonify({"matches": matches})
 
 
 @app.post("/autonomous/start")

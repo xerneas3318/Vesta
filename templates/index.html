@@ -475,6 +475,33 @@
     .rec-score-chip[data-tier="high"], .rec-expanded-score[data-tier="high"] { background: rgba(220, 110, 60, 0.2); border-color: rgba(220, 110, 60, 0.6); color: rgb(220, 110, 60); }
     .rec-score-chip[data-tier="critical"], .rec-expanded-score[data-tier="critical"] { background: rgba(220, 70, 70, 0.22); border-color: rgba(220, 70, 70, 0.65); color: rgb(220, 80, 80); }
 
+    .rec-advanced {
+      margin-top: 6px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px 14px;
+      background: var(--surface-sunk);
+    }
+    .rec-advanced > summary {
+      cursor: pointer; list-style: none; user-select: none;
+      font-size: 12.5px; font-weight: 600; letter-spacing: 0.2px;
+      color: var(--text-muted);
+      padding: 6px 0;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .rec-advanced > summary::-webkit-details-marker { display: none; }
+    .rec-advanced > summary::before {
+      content: "▸"; font-size: 10px; color: var(--text-muted);
+      transition: transform 0.15s ease; display: inline-block;
+    }
+    .rec-advanced[open] > summary::before { transform: rotate(90deg); }
+    .rec-advanced[open] > summary { color: var(--text); }
+    .rec-advanced-body {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 4px 0 10px;
+    }
+    .rec-rerun-status { font-style: italic; }
+
     .rec-expanded-analysis { display: flex; flex-direction: column; gap: 6px; }
     .rec-expanded-summary { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); }
     .rec-expanded-assessment { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
@@ -1921,6 +1948,13 @@
               <div class="k">Size</div><div class="v">${item.size_mb} MB</div>
               <div class="k">File</div><div class="v">${item.name}</div>
             </div>
+            <details class="rec-advanced">
+              <summary>Advanced</summary>
+              <div class="rec-advanced-body">
+                <button type="button" class="btn rec-rerun-btn">Rerun AI analysis</button>
+                <span class="rec-rerun-status note hidden"></span>
+              </div>
+            </details>
           </div>
         `;
         card.querySelector(".rec-card-meta").textContent = formatRecTimestamp(recTimestampMs(item));
@@ -1971,6 +2005,45 @@
             applyCardVisuals(card, itemByName(item.name) || item);
           });
         });
+
+        const rerunBtn = card.querySelector(".rec-rerun-btn");
+        const rerunStatus = card.querySelector(".rec-rerun-status");
+        if (rerunBtn) {
+          rerunBtn.addEventListener("click", async function (e) {
+            e.stopPropagation();
+            rerunBtn.disabled = true;
+            if (rerunStatus) {
+              rerunStatus.textContent = "Queued…";
+              rerunStatus.classList.remove("hidden");
+            }
+            try {
+              const resp = await fetch("/recordings/analyze", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: item.name }),
+              });
+              const data = await resp.json();
+              if (data.error) {
+                if (rerunStatus) rerunStatus.textContent = `Failed: ${data.error}`;
+              } else {
+                const cached = itemByName(item.name);
+                if (cached) {
+                  cached.analysis_status = "pending";
+                  cached.summary = "";
+                  cached.threat_score = null;
+                  cached.threat_assessment = "";
+                  cached.analysis_error = "";
+                }
+                applyCardVisuals(card, itemByName(item.name) || item);
+                if (rerunStatus) rerunStatus.textContent = "Re-analysis queued.";
+              }
+            } catch (err) {
+              if (rerunStatus) rerunStatus.textContent = `Failed: ${err.message || err}`;
+            } finally {
+              setTimeout(() => { rerunBtn.disabled = false; }, 800);
+            }
+          });
+        }
 
         applyCardVisuals(card, item);
 

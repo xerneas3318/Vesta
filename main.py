@@ -9,6 +9,7 @@ import queue
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -271,64 +272,40 @@ def parse_recording_analysis(raw_text: str, fallback_score: int) -> dict[str, ob
 
 
 def sample_frames_for_analysis(video_path: str, target: int = 16) -> list[np.ndarray]:
-    cap = cv2.VideoCapture(video_path)
-    opened = cap.isOpened()
-    collected: list[np.ndarray] = []
-    if opened:
-        safety_cap = 4000
-        while len(collected) < safety_cap:
-            ok, frame_bgr = cap.read()
-            if not ok or frame_bgr is None:
-                break
-            collected.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
-    cap.release()
-
-    if collected:
-        if len(collected) <= target:
-            return collected
-        indices = np.linspace(0, len(collected) - 1, target, dtype=int)
-        return [collected[int(i)] for i in indices]
-
-    # Fallback: try ffmpeg to repair the container and sample evenly.
+    # We extract via ffmpeg subprocess instead of cv2 because importing torch
+    # / ultralytics in this process breaks cv2's mp4 read pipeline globally
+    # (cap.read() silently returns no frames after those imports load).
     src = Path(video_path)
-    if src.exists():
-        repaired = src.with_suffix(".repair.mp4")
-        try:
-            subprocess.run(
-                ["ffmpeg", "-y", "-err_detect", "ignore_err", "-i", str(src), "-c", "copy", "-movflags", "+faststart", str(repaired)],
-                check=True, capture_output=True,
-            )
-        except Exception:
-            try:
-                repaired.unlink(missing_ok=True)
-            except Exception:
-                pass
-            repaired = None  # type: ignore[assignment]
+    if not src.exists():
+        raise RuntimeError("Recording file no longer exists.")
 
-        if repaired and repaired.exists() and repaired.stat().st_size > 0:
-            cap2 = cv2.VideoCapture(str(repaired))
-            try:
-                if cap2.isOpened():
-                    while len(collected) < 4000:
-                        ok, frame_bgr = cap2.read()
-                        if not ok or frame_bgr is None:
-                            break
-                        collected.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
-            finally:
-                cap2.release()
-                try:
-                    repaired.unlink(missing_ok=True)
-                except Exception:
-                    pass
-        if collected:
-            if len(collected) <= target:
-                return collected
-            indices = np.linspace(0, len(collected) - 1, target, dtype=int)
-            return [collected[int(i)] for i in indices]
+    with tempfile.TemporaryDirectory(prefix="recanalyze_") as tmpdir:
+        pattern = str(Path(tmpdir) / "f_%05d.jpg")
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-err_detect", "ignore_err",
+                "-i", str(src),
+                "-vf", "scale=512:-2",
+                "-q:v", "5",
+                pattern,
+            ],
+            capture_output=True,
+        )
+        files = sorted(Path(tmpdir).glob("f_*.jpg"))
+        if not files:
+            err = proc.stderr.decode("utf-8", errors="ignore").strip().splitlines()
+            err_msg = err[-1] if err else "no decodable frames"
+            if "moov atom not found" in err_msg.lower() or "invalid data" in err_msg.lower():
+                raise RuntimeError("Recording is unreadable (likely interrupted before it was finalized). Try deleting it.")
+            raise RuntimeError(f"Could not decode any frames: {err_msg[:160]}")
 
-    if not opened:
-        raise RuntimeError("Recording is unreadable (likely interrupted before it was finalized). Try deleting it.")
-    raise RuntimeError("Recording contained no decodable frames.")
+        if len(files) <= target:
+            picks = files
+        else:
+            idx = np.linspace(0, len(files) - 1, target, dtype=int)
+            picks = [files[int(i)] for i in idx]
+        return [np.array(Image.open(p).convert("RGB")) for p in picks]
 
 
 def auto_analyze_recording(name: str) -> dict[str, object]:

@@ -940,6 +940,25 @@
 
     /* ---------- Alerts inbox ---------- */
     .alerts-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .alerts-toggle {
+      background: transparent;
+      border: none;
+      padding: 0;
+      width: 100%;
+      cursor: pointer;
+      color: inherit;
+      text-align: left;
+      font: inherit;
+    }
+    .alerts-toggle .alerts-toggle-chev {
+      display: inline-block;
+      margin-right: 8px;
+      transition: transform 0.15s ease;
+      vertical-align: -1px;
+    }
+    .alerts-toggle[aria-expanded="true"] .alerts-toggle-chev { transform: rotate(90deg); }
+    .alerts-toggle:hover .lhs { color: var(--accent); }
     .alerts-empty {
       padding: 22px 24px;
       background: var(--surface-card);
@@ -1405,12 +1424,12 @@
               </div>
             </div>
 
-            <div class="section-label">
-              <span class="lhs">Alerts</span>
+            <button type="button" class="section-label alerts-toggle" id="alerts-toggle" aria-expanded="false">
+              <span class="lhs"><svg class="alerts-toggle-chev" width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l4 4-4 4"/></svg>Alerts</span>
               <span class="chip mono" id="alerts-count">0</span>
-            </div>
-            <div id="alerts-list" class="alerts-list">
-              <div class="alerts-empty">No alerts yet. Turn on Autonomous watch above to start recording when people appear.</div>
+            </button>
+            <div id="alerts-list" class="alerts-list hidden">
+              <div class="alerts-empty">No alerts yet. Arm the system to start recording when someone appears.</div>
             </div>
 
             <details class="card padded disclose" style="margin-top:0; border-top:none; padding-top:14px;">
@@ -2545,6 +2564,13 @@
       const autoStatus = document.getElementById("autonomous-status");
       const alertsList = document.getElementById("alerts-list");
       const alertsCount = document.getElementById("alerts-count");
+      const alertsToggle = document.getElementById("alerts-toggle");
+      if (alertsToggle && alertsList) {
+        alertsToggle.addEventListener("click", function () {
+          const isHidden = alertsList.classList.toggle("hidden");
+          alertsToggle.setAttribute("aria-expanded", isHidden ? "false" : "true");
+        });
+      }
 
       function formatTime(ms) {
         if (!ms) return "";

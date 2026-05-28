@@ -338,19 +338,31 @@ def auto_analyze_recording(name: str) -> dict[str, object]:
         f"Each tile is a successive frame; the mosaic is {grid_n}x{grid_n}, read left-to-right, top-to-bottom. "
         "CAMERA CONTEXT (treat as ground truth about who is allowed here and what is normal): "
         f"{CAMERA_CONTEXT} "
+        "ACTIVELY SCAN every frame for any of these threat indicators, and call them out by name in your assessment if present:\n"
+        "- VIOLENCE: one person hitting, kicking, shoving, grabbing, choking, dragging, or pinning another; people fighting or wrestling; someone falling/lying on the ground after contact; a group surrounding or cornering a person; sudden lunging movement toward another person.\n"
+        "- WEAPONS / IMPROVISED WEAPONS: anyone holding, raising, or swinging a stick, bat, pipe, bottle, knife, gun, or other object that could be used as a weapon. Even a hand-held stick around another person should be treated as a weapon.\n"
+        "- THEFT / BURGLARY: carrying away tools, parts, packages, or boxes; opening lockers/containers/vehicles that aren't theirs; reaching into bags; pocketing items.\n"
+        "- VANDALISM / PROPERTY DAMAGE: striking, kicking, spraying, breaking, or marking equipment/walls/vehicles.\n"
+        "- ARSON: holding a lighter, match, or flame near anything; smoke or fire in frame.\n"
+        "- TRESPASSING / LOITERING: anyone present who doesn't match the authorized profile in the camera context; lingering with no apparent task; hiding from view; running from view.\n"
+        "- TAMPERING: opening panels/cabinets, disconnecting cables, touching machinery in non-routine ways.\n"
+        "If you see ANY violent contact or weapon-like object in someone's hand, the threat_score MUST be at least 75 and assessment MUST mention what you saw. "
         "Output ONLY strict JSON with keys: "
-        '"summary" (one short sentence describing what happens in the clip), '
+        '"summary" (one short sentence describing what happens in the clip — describe what people do, not just where they are), '
         '"threat_score" (integer 0-100), '
-        '"assessment" (one short sentence explaining the threat in light of the camera context). '
+        '"assessment" (one short sentence naming the specific threat indicator seen, or explaining why the clip is benign). '
         "Scoring guide (apply with the camera context in mind): "
-        "0-20 benign authorized activity; 21-50 unauthorized presence or pre-incident behavior; "
-        "51-80 active suspicious or criminal activity (theft, vandalism, fighting); "
-        "81-100 active high-risk threat (assault, weapons, arson). "
-        "An unauthorized person in a restricted area should rarely be below 30."
+        "0-20 benign authorized activity only; "
+        "21-50 unauthorized presence or pre-incident behavior (loitering, lurking, peeking in); "
+        "51-80 active suspicious or criminal activity (theft, vandalism, brandishing a stick/object); "
+        "81-100 active high-risk threat (assault, fighting, weapon swung at a person, arson, robbery). "
+        "An unauthorized person in a restricted area should rarely be below 30. "
+        "When in doubt between two ranges, choose the higher one if any threat indicator above is plausible."
     )
     user_prompt = (
-        "Describe what is happening in this clip and rate the threat using the camera context above. "
-        "Return strict JSON only."
+        "Scan every tile for the threat indicators listed in the system prompt. "
+        "Pay extra attention to people's hands (objects, weapons), interactions between people (contact, conflict, restraint), "
+        "and any object held high or swung. Describe what is happening and rate the threat. Return strict JSON only."
     )
     raw = query_llamacpp_with_images([mosaic], user_prompt, max_tokens=280, system_prompt=system_prompt)
     return parse_recording_analysis(raw, fallback_score=0)

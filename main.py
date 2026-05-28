@@ -190,9 +190,19 @@ def write_recording_meta(name: str, patch: dict[str, object]) -> dict[str, objec
         return current
 
 
+def _eligible_recording_paths() -> list[Path]:
+    paths: list[Path] = []
+    for path in RECORDINGS_DIR.glob("*.mp4"):
+        # Skip transient transcode artifacts (.browser.mp4 written by ffmpeg)
+        if path.name.endswith(".browser.mp4"):
+            continue
+        paths.append(path)
+    return paths
+
+
 def list_recorded_videos() -> list[dict[str, object]]:
     videos: list[dict[str, object]] = []
-    for path in sorted(RECORDINGS_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for path in sorted(_eligible_recording_paths(), key=lambda p: p.stat().st_mtime, reverse=True):
         stat = path.stat()
         meta = read_recording_meta(path.name)
         videos.append(
@@ -348,10 +358,18 @@ def queue_recording_analysis(name: str) -> None:
 
 
 def schedule_pending_analyses() -> None:
-    for path in RECORDINGS_DIR.glob("*.mp4"):
+    now = time.time()
+    for path in _eligible_recording_paths():
+        try:
+            mtime = path.stat().st_mtime
+        except FileNotFoundError:
+            continue
+        # File may still be transcoding / being replaced; give it a moment to settle.
+        if now - mtime < 2.5:
+            continue
         meta = read_recording_meta(path.name)
         status = str(meta.get("analysis_status", "pending"))
-        if status in ("pending", "") or (status == "error" and not meta.get("analysis_error")):
+        if status in ("pending", ""):
             queue_recording_analysis(path.name)
 
 
@@ -935,6 +953,9 @@ def stop_recording() -> dict[str, object]:
             "name": recording_path.name,
             "url": recording_url,
         }
+        if recording_path.exists():
+            write_recording_meta(recording_path.name, {"analysis_status": "pending", "analysis_error": ""})
+            queue_recording_analysis(recording_path.name)
     if recording_error:
         payload["error"] = recording_error
     return payload

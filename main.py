@@ -272,22 +272,63 @@ def parse_recording_analysis(raw_text: str, fallback_score: int) -> dict[str, ob
 
 def sample_frames_for_analysis(video_path: str, target: int = 16) -> list[np.ndarray]:
     cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise RuntimeError("Could not open video for analysis.")
+    opened = cap.isOpened()
     collected: list[np.ndarray] = []
-    safety_cap = 4000
-    while len(collected) < safety_cap:
-        ok, frame_bgr = cap.read()
-        if not ok or frame_bgr is None:
-            break
-        collected.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+    if opened:
+        safety_cap = 4000
+        while len(collected) < safety_cap:
+            ok, frame_bgr = cap.read()
+            if not ok or frame_bgr is None:
+                break
+            collected.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
     cap.release()
-    if not collected:
-        raise RuntimeError("No frames could be read from the clip.")
-    if len(collected) <= target:
-        return collected
-    indices = np.linspace(0, len(collected) - 1, target, dtype=int)
-    return [collected[int(i)] for i in indices]
+
+    if collected:
+        if len(collected) <= target:
+            return collected
+        indices = np.linspace(0, len(collected) - 1, target, dtype=int)
+        return [collected[int(i)] for i in indices]
+
+    # Fallback: try ffmpeg to repair the container and sample evenly.
+    src = Path(video_path)
+    if src.exists():
+        repaired = src.with_suffix(".repair.mp4")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-err_detect", "ignore_err", "-i", str(src), "-c", "copy", "-movflags", "+faststart", str(repaired)],
+                check=True, capture_output=True,
+            )
+        except Exception:
+            try:
+                repaired.unlink(missing_ok=True)
+            except Exception:
+                pass
+            repaired = None  # type: ignore[assignment]
+
+        if repaired and repaired.exists() and repaired.stat().st_size > 0:
+            cap2 = cv2.VideoCapture(str(repaired))
+            try:
+                if cap2.isOpened():
+                    while len(collected) < 4000:
+                        ok, frame_bgr = cap2.read()
+                        if not ok or frame_bgr is None:
+                            break
+                        collected.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+            finally:
+                cap2.release()
+                try:
+                    repaired.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        if collected:
+            if len(collected) <= target:
+                return collected
+            indices = np.linspace(0, len(collected) - 1, target, dtype=int)
+            return [collected[int(i)] for i in indices]
+
+    if not opened:
+        raise RuntimeError("Recording is unreadable (likely interrupted before it was finalized). Try deleting it.")
+    raise RuntimeError("Recording contained no decodable frames.")
 
 
 def auto_analyze_recording(name: str) -> dict[str, object]:

@@ -1883,7 +1883,8 @@
             statusEl.innerHTML = '<span class="rec-spin"></span> Processing…';
             statusEl.classList.remove('hidden');
           } else if (status === 'error') {
-            statusEl.textContent = 'Analysis failed';
+            const err = item.analysis_error ? `Analysis failed: ${item.analysis_error}` : 'Analysis failed.';
+            statusEl.textContent = err;
             statusEl.classList.remove('hidden');
           } else {
             statusEl.textContent = 'Queued for review…';
@@ -1975,6 +1976,7 @@
               <summary>Advanced</summary>
               <div class="rec-advanced-body">
                 <button type="button" class="btn rec-rerun-btn">Rerun AI analysis</button>
+                <button type="button" class="btn danger rec-delete-btn">Delete recording</button>
                 <span class="rec-rerun-status note hidden"></span>
               </div>
             </details>
@@ -2028,6 +2030,36 @@
             applyCardVisuals(card, itemByName(item.name) || item);
           });
         });
+
+        const deleteBtn = card.querySelector(".rec-delete-btn");
+        if (deleteBtn) {
+          deleteBtn.addEventListener("click", async function (e) {
+            e.stopPropagation();
+            if (!window.confirm(`Delete recording "${item.custom_name || item.name}"? This cannot be undone.`)) return;
+            deleteBtn.disabled = true;
+            try {
+              const resp = await fetch("/recordings/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: item.name }),
+              });
+              const data = await resp.json();
+              if (data.error) {
+                window.alert(`Delete failed: ${data.error}`);
+                deleteBtn.disabled = false;
+                return;
+              }
+              recordingsCache = recordingsCache.filter(it => it.name !== item.name);
+              recordingsListKey = listKeyFor(recordingsCache);
+              if (expandedRecName === item.name) expandedRecName = null;
+              card.remove();
+              renderRecGrid();
+            } catch (err) {
+              window.alert(`Delete failed: ${err.message || err}`);
+              deleteBtn.disabled = false;
+            }
+          });
+        }
 
         const rerunBtn = card.querySelector(".rec-rerun-btn");
         const rerunStatus = card.querySelector(".rec-rerun-status");

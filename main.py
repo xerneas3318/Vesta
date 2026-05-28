@@ -260,12 +260,33 @@ def parse_recording_analysis(raw_text: str, fallback_score: int) -> dict[str, ob
     return {"summary": summary, "threat_score": score, "threat_assessment": assessment}
 
 
+def sample_frames_for_analysis(video_path: str, target: int = 16) -> list[np.ndarray]:
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError("Could not open video for analysis.")
+    collected: list[np.ndarray] = []
+    safety_cap = 4000
+    while len(collected) < safety_cap:
+        ok, frame_bgr = cap.read()
+        if not ok or frame_bgr is None:
+            break
+        collected.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+    cap.release()
+    if not collected:
+        raise RuntimeError("No frames could be read from the clip.")
+    if len(collected) <= target:
+        return collected
+    indices = np.linspace(0, len(collected) - 1, target, dtype=int)
+    return [collected[int(i)] for i in indices]
+
+
 def auto_analyze_recording(name: str) -> dict[str, object]:
     video_path = RECORDINGS_DIR / name
     if not video_path.exists():
         raise RuntimeError(f"Recording {name} no longer exists.")
-    frames = sample_frames(str(video_path), 16)
-    mosaic = make_mosaic(frames, n=4, cell_size=224, source_color="rgb")
+    frames = sample_frames_for_analysis(str(video_path), target=16)
+    grid_n = 4 if len(frames) >= 16 else (3 if len(frames) >= 9 else (2 if len(frames) >= 4 else 1))
+    mosaic = make_mosaic(frames, n=grid_n, cell_size=224, source_color="rgb")
     system_prompt = (
         "You are a vigilant video security analyst reviewing a 4x4 temporal mosaic of a single short clip. "
         "Output ONLY strict JSON with keys: "
@@ -2420,6 +2441,23 @@ def recordings_analyze_queue():
     return jsonify({"name": name, "analysis_status": "pending"})
 
 
+@app.post("/recordings/delete")
+def recordings_delete():
+    payload = flask_request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "")
+    if not name or "/" in name or ".." in name:
+        return jsonify({"error": "Invalid name."}), 400
+    video_path = RECORDINGS_DIR / name
+    if not video_path.exists():
+        return jsonify({"error": "Recording not found."}), 404
+    try:
+        video_path.unlink(missing_ok=True)
+        recording_sidecar_path(name).unlink(missing_ok=True)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"name": name, "deleted": True})
+
+
 @app.post("/recordings/search")
 def recordings_search():
     payload = flask_request.get_json(silent=True) or {}
@@ -2541,10 +2579,10 @@ def analyze_status(job_id: str):
 def analyze_result(job_id: str):
     job = get_job(job_id)
     if job is None:
-        return render_page(overall_error="Job not found."), 404
+        return render_page()
     state = str(job.get("state", "queued"))
     if state not in {"done", "error"}:
-        return render_page(overall_error="Analysis is still running."), 409
+        return render_page()
 
     result_context = job.get("result_context")
     if isinstance(result_context, dict):

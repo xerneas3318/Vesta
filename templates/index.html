@@ -379,6 +379,39 @@
     .rec-empty { text-align: center; color: var(--text-muted); display: none; }
     .rec-empty.show { display: block; }
 
+    .rec-work-bar {
+      position: relative;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--surface-sunk);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .rec-work-bar > span {
+      position: absolute;
+      top: 50%; left: -10%;
+      width: 22px; height: 8px;
+      transform: translateY(-50%);
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(120, 90, 200, 0.85), rgba(60, 130, 200, 0.85));
+      animation: rec-work-slide 1.6s cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
+      opacity: 0.85;
+    }
+    .rec-work-bar > span:nth-child(1) { animation-delay: 0.00s; width: 28px; }
+    .rec-work-bar > span:nth-child(2) { animation-delay: 0.15s; width: 16px; opacity: 0.6; }
+    .rec-work-bar > span:nth-child(3) { animation-delay: 0.30s; width: 32px; }
+    .rec-work-bar > span:nth-child(4) { animation-delay: 0.45s; width: 14px; opacity: 0.55; }
+    .rec-work-bar > span:nth-child(5) { animation-delay: 0.60s; width: 24px; }
+    .rec-work-bar > span:nth-child(6) { animation-delay: 0.75s; width: 18px; opacity: 0.65; }
+    .rec-work-bar > span:nth-child(7) { animation-delay: 0.90s; width: 30px; }
+    .rec-work-bar > span:nth-child(8) { animation-delay: 1.05s; width: 12px; opacity: 0.5; }
+    @keyframes rec-work-slide {
+      0%   { left: -10%; opacity: 0; }
+      10%  { opacity: 0.9; }
+      90%  { opacity: 0.9; }
+      100% { left: 110%; opacity: 0; }
+    }
+
     .rec-grid {
       display: grid; gap: 14px;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -1447,6 +1480,9 @@
           </div>
 
           <p id="rec_search_status" class="note rec-search-status hidden"></p>
+          <div id="rec_work_bar" class="rec-work-bar hidden" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
           <div id="rec_empty" class="card padded rec-empty">No recordings match.</div>
           <div id="rec_grid" class="rec-grid"></div>
         </section>
@@ -1740,6 +1776,7 @@
       let recSearchStatus = '';
       let expandedRecName = null;
       let nameInputDebounce = new Map();
+      let aiSearching = false;
 
       function itemByName(name) { return recordingsCache.find(it => it.name === name); }
       function recKind(name) { return String(name || "").startsWith("auto_") ? "auto" : "manual"; }
@@ -2085,7 +2122,8 @@
         const items = applyRecSortAndFilter(recordingsCache);
         recGridEl.innerHTML = "";
         for (const item of items) recGridEl.appendChild(renderRecCard(item));
-        if (recEmptyEl) recEmptyEl.classList.toggle("show", items.length === 0);
+        if (recEmptyEl) recEmptyEl.classList.toggle("show", !aiSearching && items.length === 0);
+        if (recWorkBarEl) recWorkBarEl.classList.toggle("hidden", !aiSearching);
         if (recSearchStatusEl) {
           if (recSearchStatus) {
             recSearchStatusEl.textContent = recSearchStatus;
@@ -2101,6 +2139,7 @@
       const recSearchInput = document.getElementById("rec_search_input");
       const recSearchSmartBtn = document.getElementById("rec_search_smart");
       const recSearchStatusEl = document.getElementById("rec_search_status");
+      const recWorkBarEl = document.getElementById("rec_work_bar");
       const recSortSel = document.getElementById("rec_sort");
       const recFilterSel = document.getElementById("rec_filter");
 
@@ -2120,6 +2159,7 @@
         recSearchSmartBtn.addEventListener("click", async function () {
           const query = (recSearchInput && recSearchInput.value || '').trim();
           if (!query) { recSearchOrder = null; recSearchStatus = ''; renderRecGrid(); return; }
+          aiSearching = true;
           recSearchStatus = "Asking the AI…";
           renderRecGrid();
           try {
@@ -2139,6 +2179,8 @@
             }
           } catch (err) {
             recSearchStatus = `AI search failed: ${err.message || err}`;
+          } finally {
+            aiSearching = false;
           }
           renderRecGrid();
         });

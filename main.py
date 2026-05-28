@@ -2480,6 +2480,35 @@ def recordings_analyze_queue():
     return jsonify({"name": name, "analysis_status": "pending"})
 
 
+@app.get("/recordings/thumb/<path:name>")
+def recordings_thumb(name: str):
+    if "/" in name or ".." in name or not name.endswith(".mp4"):
+        return jsonify({"error": "Invalid name."}), 400
+    video = RECORDINGS_DIR / name
+    if not video.exists():
+        return jsonify({"error": "Recording not found."}), 404
+    thumb = video.with_suffix(".thumb.jpg")
+    needs_build = (not thumb.exists()) or (thumb.stat().st_mtime < video.stat().st_mtime)
+    if needs_build:
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", str(video),
+                    "-vf", "scale=480:-2",
+                    "-frames:v", "1",
+                    "-q:v", "5",
+                    str(thumb),
+                ],
+                check=True, capture_output=True,
+            )
+        except Exception:
+            return jsonify({"error": "Could not build thumbnail."}), 500
+    response = send_from_directory(RECORDINGS_DIR, thumb.name, mimetype="image/jpeg")
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
 @app.post("/recordings/delete")
 def recordings_delete():
     payload = flask_request.get_json(silent=True) or {}
@@ -2492,6 +2521,7 @@ def recordings_delete():
     try:
         video_path.unlink(missing_ok=True)
         recording_sidecar_path(name).unlink(missing_ok=True)
+        video_path.with_suffix(".thumb.jpg").unlink(missing_ok=True)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({"name": name, "deleted": True})

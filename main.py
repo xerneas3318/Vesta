@@ -67,6 +67,13 @@ AUTONOMOUS_TRIGGER_HITS = max(1, int(os.getenv("AUTONOMOUS_TRIGGER_HITS", "3")))
 AUTONOMOUS_TRIGGER_MISSES = max(1, int(os.getenv("AUTONOMOUS_TRIGGER_MISSES", "12")))
 AUTONOMOUS_DWELL_OFF_S = max(1.0, float(os.getenv("AUTONOMOUS_DWELL_OFF_S", "10.0")))
 AUTONOMOUS_MAX_CLIP_S = max(5.0, float(os.getenv("AUTONOMOUS_MAX_CLIP_S", "180.0")))
+
+CAMERA_CONTEXT = os.getenv(
+    "CAMERA_CONTEXT",
+    "This camera covers a restricted area. Only cleanup crew and maintenance staff are authorized to be present. "
+    "Anyone else, anyone loitering, anyone tampering with equipment, or any signs of conflict/violence should be treated as suspicious and rated higher on the threat scale.",
+)
+RECORDING_ANALYSIS_GRID_N = max(2, int(os.getenv("RECORDING_ANALYSIS_GRID_N", "6")))
 AUTONOMOUS_PROMPT = os.getenv(
     "AUTONOMOUS_PROMPT",
     "Analyze this surveillance clip for suspicious activity or potential threats (theft, arson, vandalism, trespassing, assault, weapons).",
@@ -313,22 +320,39 @@ def auto_analyze_recording(name: str) -> dict[str, object]:
     video_path = RECORDINGS_DIR / name
     if not video_path.exists():
         raise RuntimeError(f"Recording {name} no longer exists.")
-    frames = sample_frames_for_analysis(str(video_path), target=16)
-    grid_n = 4 if len(frames) >= 16 else (3 if len(frames) >= 9 else (2 if len(frames) >= 4 else 1))
+    target_frames = RECORDING_ANALYSIS_GRID_N * RECORDING_ANALYSIS_GRID_N
+    frames = sample_frames_for_analysis(str(video_path), target=target_frames)
+    if len(frames) >= target_frames:
+        grid_n = RECORDING_ANALYSIS_GRID_N
+    elif len(frames) >= 16:
+        grid_n = 4
+    elif len(frames) >= 9:
+        grid_n = 3
+    elif len(frames) >= 4:
+        grid_n = 2
+    else:
+        grid_n = 1
     mosaic = make_mosaic(frames, n=grid_n, cell_size=224, source_color="rgb")
     system_prompt = (
-        "You are a vigilant video security analyst reviewing a 4x4 temporal mosaic of a single short clip. "
+        "You are a vigilant video security analyst reviewing a temporal mosaic of a single short surveillance clip. "
+        f"Each tile is a successive frame; the mosaic is {grid_n}x{grid_n}, read left-to-right, top-to-bottom. "
+        "CAMERA CONTEXT (treat as ground truth about who is allowed here and what is normal): "
+        f"{CAMERA_CONTEXT} "
         "Output ONLY strict JSON with keys: "
         '"summary" (one short sentence describing what happens in the clip), '
         '"threat_score" (integer 0-100), '
-        '"assessment" (one short sentence rating the threat). '
-        "Scoring: 0-20 benign, 21-50 suspicious, 51-80 likely criminal, 81-100 active high-risk threat."
+        '"assessment" (one short sentence explaining the threat in light of the camera context). '
+        "Scoring guide (apply with the camera context in mind): "
+        "0-20 benign authorized activity; 21-50 unauthorized presence or pre-incident behavior; "
+        "51-80 active suspicious or criminal activity (theft, vandalism, fighting); "
+        "81-100 active high-risk threat (assault, weapons, arson). "
+        "An unauthorized person in a restricted area should rarely be below 30."
     )
     user_prompt = (
-        "Each tile is a successive frame from the same clip. "
-        "Describe what is happening and rate the threat. Return strict JSON only."
+        "Describe what is happening in this clip and rate the threat using the camera context above. "
+        "Return strict JSON only."
     )
-    raw = query_llamacpp_with_images([mosaic], user_prompt, max_tokens=240, system_prompt=system_prompt)
+    raw = query_llamacpp_with_images([mosaic], user_prompt, max_tokens=280, system_prompt=system_prompt)
     return parse_recording_analysis(raw, fallback_score=0)
 
 

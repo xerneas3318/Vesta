@@ -472,6 +472,9 @@
       padding: 5px 12px; border-radius: 999px; cursor: pointer;
       font-size: 12.5px; font-weight: 600; letter-spacing: 0.2px;
       transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+      min-width: 96px;
+      text-align: center;
+      display: inline-flex; align-items: center; justify-content: center;
     }
     .star-btn:hover { border-color: rgba(245, 200, 80, 0.65); color: rgb(220, 175, 70); }
     .star-btn.active { border-color: rgba(245, 200, 80, 0.75); color: rgb(220, 165, 50); background: rgba(245, 200, 80, 0.16); }
@@ -1362,23 +1365,6 @@
                 <div class="btn-row" style="margin-top:14px;">
                   <button class="btn primary" data-go="analyze">Review</button>
                 </div>
-              </div>
-            </div>
-
-            <div class="card padded" id="autonomous-card">
-              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap;">
-                <div style="flex:1; min-width:240px;">
-                  <h3>Auto watch</h3>
-                  <p class="note">Automatically records and reviews when someone is on camera. Alerts show up below.</p>
-                </div>
-                <label class="toggle" style="background:transparent; padding:0;">
-                  <input type="checkbox" id="autonomous_toggle" />
-                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                  <span class="toggle-text">
-                    <span class="toggle-title" id="autonomous-label">Off</span>
-                    <span class="toggle-sub" id="autonomous-status">No active event</span>
-                  </span>
-                </label>
               </div>
             </div>
 
@@ -2381,6 +2367,7 @@
 
       function applyArmedVisual(armed) {
         if (!armBtn) return;
+        const wasArmed = armBtn.classList.contains("armed");
         armBtn.classList.toggle("armed", armed);
         document.body.classList.toggle("armed", armed);
         armBtn.textContent = armed ? "Disarm" : "Arm";
@@ -2401,6 +2388,14 @@
           } else if (savedGreetBody) {
             greetBodyEl.textContent = savedGreetBody;
           }
+        }
+        if (armed !== wasArmed) {
+          const endpoint = armed ? "/autonomous/start" : "/autonomous/stop";
+          fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rtsp_url: (rtspInput && rtspInput.value.trim()) || "" }),
+          }).catch(() => {});
         }
       }
 
@@ -2529,7 +2524,7 @@
           if (alertsCount) alertsCount.textContent = String(events.length);
           if (alertsList) {
             if (events.length === 0) {
-              alertsList.innerHTML = '<div class="alerts-empty">No alerts yet. Turn on Autonomous watch above to start recording when people appear.</div>';
+              alertsList.innerHTML = '<div class="alerts-empty">No alerts yet. Arm the system to start recording when someone appears.</div>';
             } else {
               alertsList.innerHTML = events.slice(0, 20).map(renderAlert).join('');
             }

@@ -348,8 +348,68 @@
     .greet-text { display: block; }
     .greet-date { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; letter-spacing: 0.1px; }
 
+    /* ---------- Recording viewer ---------- */
+    .recording-player {
+      width: 100%; border-radius: 12px; background: #14110d;
+      border: 1px solid var(--border); margin-bottom: 12px;
+      max-height: 420px; object-fit: contain;
+    }
+    .recording-list {
+      list-style: none; padding: 0; margin: 0;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .recording-item {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--surface-sunk);
+      cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .recording-item:hover { border-color: var(--accent); background: var(--surface-card); }
+    .recording-item.active { border-color: var(--accent); }
+    .recording-item .rec-name { font-family: var(--mono); font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .recording-item .rec-meta { font-size: 11.5px; color: var(--text-muted); font-family: var(--mono); flex-shrink: 0; }
+
     /* ---------- Arm button (sidebar) ---------- */
     .arm-block { padding: 0 8px 10px; }
+    .arm-schedule { margin-top: 10px; }
+    .arm-schedule > summary {
+      cursor: pointer; list-style: none;
+      font-size: 11.5px; color: var(--text-muted);
+      padding: 4px 2px; letter-spacing: 0.2px;
+      user-select: none;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .arm-schedule > summary::-webkit-details-marker { display: none; }
+    .arm-schedule > summary::before {
+      content: "▸"; font-size: 9px; color: var(--text-muted);
+      display: inline-block; transition: transform 0.15s ease;
+    }
+    .arm-schedule[open] > summary::before { transform: rotate(90deg); }
+    .arm-schedule[open] > summary { color: var(--text); }
+    .arm-schedule-body {
+      display: flex; flex-direction: column; gap: 8px;
+      margin-top: 8px; padding: 4px 2px;
+    }
+    .arm-schedule-toggle {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text);
+      cursor: pointer;
+    }
+    .arm-schedule-toggle input { accent-color: rgb(190, 35, 35); }
+    .arm-schedule-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      font-size: 11.5px; color: var(--text-muted);
+    }
+    .arm-schedule-row input[type="time"] {
+      background: var(--surface-sunk);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
     .arm-btn {
       display: inline-flex; align-items: center; gap: 10px;
       width: 100%; justify-content: center;
@@ -390,7 +450,6 @@
     body.armed .note { color: rgb(170, 70, 70); font-weight: 600; }
     body.armed .home-live-mini { border-color: rgba(190, 35, 35, 0.75) !important; box-shadow: 0 0 24px rgba(190, 35, 35, 0.28); }
     body.armed .home-live-mini-badge { background: rgba(190, 35, 35, 0.95); color: #fff; }
-    body.armed .btn.primary { opacity: 0.55; pointer-events: none; }
     body.armed .rail-item .rail-ico { color: rgb(180, 30, 30); }
     body.armed .rail-item { color: rgb(170, 70, 70); font-weight: 600; }
     body.armed .rail-item.active { color: rgb(180, 30, 30); }
@@ -947,6 +1006,23 @@
 
       <div class="arm-block">
         <button id="arm-btn" type="button" class="arm-btn" aria-pressed="false">Arm</button>
+        <details class="arm-schedule">
+          <summary>Schedule</summary>
+          <div class="arm-schedule-body">
+            <label class="arm-schedule-toggle">
+              <input type="checkbox" id="arm_sched_enabled" checked />
+              <span>Auto-arm</span>
+            </label>
+            <label class="arm-schedule-row">
+              <span>From</span>
+              <input type="time" id="arm_sched_start" value="19:00" />
+            </label>
+            <label class="arm-schedule-row">
+              <span>To</span>
+              <input type="time" id="arm_sched_end" value="06:00" />
+            </label>
+          </div>
+        </details>
       </div>
 
       <div class="theme-block">
@@ -1107,11 +1183,18 @@
             <div style="margin-top:18px; display:flex; flex-direction:column; gap:14px;">
               <input id="live_rtsp_url" type="hidden" value="{{ live_rtsp_default }}" />
               <div class="btn-row">
-                <button id="record_start_btn" type="button" class="btn primary">Start Recording</button>
-                <button id="record_stop_btn" type="button" class="btn danger">Stop Recording</button>
+                <button id="record_start_btn" type="button" class="btn primary" disabled>Start Recording</button>
+                <button id="record_stop_btn" type="button" class="btn danger" disabled>Stop Recording</button>
               </div>
               <p id="live_status_text" class="note">Idle</p>
             </div>
+          </div>
+
+          <div class="card padded">
+            <div class="section-label"><span class="lhs">Recordings</span></div>
+            <video id="recording_player" controls preload="metadata" class="recording-player hidden"></video>
+            <div id="recording_empty" class="note" style="margin-top:8px;">No recordings yet.</div>
+            <ul id="recording_list" class="recording-list"></ul>
           </div>
         </section>
 
@@ -1374,6 +1457,9 @@
       const liveStopBtn = document.getElementById("live_stop_btn");
       const recordStartBtn = document.getElementById("record_start_btn");
       const recordStopBtn = document.getElementById("record_stop_btn");
+      const recordingPlayer = document.getElementById("recording_player");
+      const recordingList = document.getElementById("recording_list");
+      const recordingEmpty = document.getElementById("recording_empty");
       const overlayLabel = document.getElementById("live_overlay_label");
       const overlayDot = document.getElementById("live_overlay_dot");
       const overlayCode = document.getElementById("live_overlay_code");
@@ -1413,6 +1499,30 @@
           }
           if (previous) recordedSelect.value = previous;
           if (statRecordings) statRecordings.textContent = String(items.length);
+
+          if (recordingList) {
+            const currentSrc = recordingPlayer && recordingPlayer.dataset.name ? recordingPlayer.dataset.name : null;
+            recordingList.innerHTML = "";
+            for (const item of items) {
+              const li = document.createElement("li");
+              li.className = "recording-item";
+              if (currentSrc && currentSrc === item.name) li.classList.add("active");
+              li.innerHTML = `<span class="rec-name"></span><span class="rec-meta"></span>`;
+              li.querySelector(".rec-name").textContent = item.name;
+              li.querySelector(".rec-meta").textContent = `${item.size_mb} MB`;
+              li.addEventListener("click", function () {
+                if (!recordingPlayer) return;
+                recordingPlayer.src = item.url || `/files/recordings/${encodeURIComponent(item.name)}`;
+                recordingPlayer.dataset.name = item.name;
+                recordingPlayer.classList.remove("hidden");
+                recordingPlayer.play().catch(() => {});
+                document.querySelectorAll(".recording-item.active").forEach(el => el.classList.remove("active"));
+                li.classList.add("active");
+              });
+              recordingList.appendChild(li);
+            }
+            if (recordingEmpty) recordingEmpty.style.display = items.length === 0 ? "" : "none";
+          }
         } catch (_err) { /* ignore */ }
       }
 
@@ -1446,6 +1556,8 @@
           if (statLiveSub) statLiveSub.textContent = errLabel ? "needs attention" : (recording ? "saving frames" : (running ? "streaming" : "RTSP feed"));
 
           liveRunning = running;
+          if (recordStartBtn) recordStartBtn.disabled = !running || recording;
+          if (recordStopBtn) recordStopBtn.disabled = !recording;
           if (homeLiveMini) homeLiveMini.classList.toggle('hidden', !running);
           if (running && homeLiveMiniImg && !homeLiveMiniImg.dataset.started) {
             homeLiveMiniImg.src = "/live/feed?ts=" + Date.now();
@@ -1566,30 +1678,88 @@
       const greetBodyEl = document.querySelector('.greet-body');
       let savedGreetTitle = greetTitleEl ? greetTitleEl.textContent : "";
       let savedGreetBody = greetBodyEl ? greetBodyEl.textContent : "";
+
+      function applyArmedVisual(armed) {
+        if (!armBtn) return;
+        armBtn.classList.toggle("armed", armed);
+        document.body.classList.toggle("armed", armed);
+        armBtn.textContent = armed ? "Disarm" : "Arm";
+        armBtn.setAttribute("aria-pressed", armed ? "true" : "false");
+        if (greetTitleEl) {
+          if (armed) {
+            if (greetTitleEl.textContent !== "System armed.") savedGreetTitle = greetTitleEl.textContent;
+            greetTitleEl.textContent = "System armed.";
+          } else if (savedGreetTitle) {
+            greetTitleEl.textContent = savedGreetTitle;
+          }
+        }
+        if (greetBodyEl) {
+          if (armed) {
+            const lockedCopy = "Lockdown engaged. Recording and alerts are active. Tap Disarm to return to normal.";
+            if (greetBodyEl.textContent !== lockedCopy) savedGreetBody = greetBodyEl.textContent;
+            greetBodyEl.textContent = lockedCopy;
+          } else if (savedGreetBody) {
+            greetBodyEl.textContent = savedGreetBody;
+          }
+        }
+      }
+
       if (armBtn) {
         armBtn.addEventListener("click", function () {
-          const armed = armBtn.classList.toggle("armed");
-          document.body.classList.toggle("armed", armed);
-          armBtn.textContent = armed ? "Disarm" : "Arm";
-          armBtn.setAttribute("aria-pressed", armed ? "true" : "false");
-          if (greetTitleEl) {
-            if (armed) {
-              savedGreetTitle = greetTitleEl.textContent;
-              greetTitleEl.textContent = "System armed.";
-            } else {
-              greetTitleEl.textContent = savedGreetTitle;
-            }
-          }
-          if (greetBodyEl) {
-            if (armed) {
-              savedGreetBody = greetBodyEl.textContent;
-              greetBodyEl.textContent = "Lockdown engaged. Recording and alerts are active. Tap Disarm to return to normal.";
-            } else {
-              greetBodyEl.textContent = savedGreetBody;
-            }
-          }
+          applyArmedVisual(!armBtn.classList.contains("armed"));
         });
       }
+
+      // ---------- Security schedule ----------
+      const SCHED_KEY = 'arm-schedule';
+      const schedEnabled = document.getElementById('arm_sched_enabled');
+      const schedStart = document.getElementById('arm_sched_start');
+      const schedEnd = document.getElementById('arm_sched_end');
+
+      function loadSchedule() {
+        try {
+          const raw = localStorage.getItem(SCHED_KEY);
+          if (raw) return Object.assign({ enabled: true, start: '19:00', end: '06:00' }, JSON.parse(raw));
+        } catch (_e) {}
+        return { enabled: true, start: '19:00', end: '06:00' };
+      }
+      function saveSchedule(s) {
+        try { localStorage.setItem(SCHED_KEY, JSON.stringify(s)); } catch (_e) {}
+      }
+      function inWindow(now, start, end) {
+        const cur = now.getHours() * 60 + now.getMinutes();
+        const [sh, sm] = (start || "19:00").split(':').map(Number);
+        const [eh, em] = (end || "06:00").split(':').map(Number);
+        const s = sh * 60 + sm, e = eh * 60 + em;
+        if (s === e) return false;
+        return s < e ? (cur >= s && cur < e) : (cur >= s || cur < e);
+      }
+
+      const schedState = loadSchedule();
+      if (schedEnabled) schedEnabled.checked = !!schedState.enabled;
+      if (schedStart) schedStart.value = schedState.start;
+      if (schedEnd) schedEnd.value = schedState.end;
+
+      function applyScheduleNow() {
+        if (!schedState.enabled) return;
+        const target = inWindow(new Date(), schedState.start, schedState.end);
+        const currentlyArmed = armBtn && armBtn.classList.contains("armed");
+        if (target !== currentlyArmed) applyArmedVisual(target);
+      }
+
+      [schedEnabled, schedStart, schedEnd].forEach(el => {
+        if (!el) return;
+        el.addEventListener('change', () => {
+          schedState.enabled = !!(schedEnabled && schedEnabled.checked);
+          schedState.start = schedStart ? schedStart.value : schedState.start;
+          schedState.end = schedEnd ? schedEnd.value : schedState.end;
+          saveSchedule(schedState);
+          applyScheduleNow();
+        });
+      });
+
+      applyScheduleNow();
+      setInterval(applyScheduleNow, 30000);
 
       setInterval(refreshLiveStatus, 2000);
       (async function autoStartLive() {

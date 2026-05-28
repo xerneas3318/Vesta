@@ -444,15 +444,24 @@
 
     .rec-expanded-body {
       display: none;
-      border-top: 1px solid var(--border);
       padding: 14px;
       gap: 14px;
     }
-    .rec-card.expanded .rec-expanded-body { display: grid; grid-template-columns: minmax(320px, 1.4fr) 1fr; }
-    @media (max-width: 720px) {
-      .rec-card.expanded .rec-expanded-body { grid-template-columns: 1fr; }
+    .rec-card.expanded .rec-thumb,
+    .rec-card.expanded .rec-card-body,
+    .rec-card.expanded .rec-card-actions { display: none; }
+    .rec-card.expanded .rec-expanded-body {
+      display: flex; flex-direction: column;
     }
-    .rec-expanded-video { width: 100%; border-radius: 12px; background: #14110d; border: 1px solid var(--border); max-height: 480px; object-fit: contain; }
+    .rec-expanded-video {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      max-height: 70vh;
+      border-radius: 12px;
+      background: #14110d;
+      border: 1px solid var(--border);
+      object-fit: contain;
+    }
     .rec-expanded-info { display: flex; flex-direction: column; gap: 10px; }
     .rec-expanded-head { display: flex; align-items: center; gap: 8px; }
     .rec-expanded-head .rec-name-input { flex: 1; }
@@ -1754,13 +1763,12 @@
             ? '<span class="flag-pill star">★</span>'
             : flag === 'important' ? '<span class="flag-pill alert">!</span>' : '';
         }
-        const flagBtn = card.querySelector(".flag-btn");
-        if (flagBtn) {
-          flagBtn.classList.remove('star', 'alert');
-          if (flag === 'starred') flagBtn.classList.add('star');
-          if (flag === 'important') flagBtn.classList.add('alert');
-          flagBtn.textContent = `${flagIcon(flag)} ${flagLabel(flag)}`;
-        }
+        card.querySelectorAll(".flag-btn").forEach(btn => {
+          btn.classList.remove('star', 'alert');
+          if (flag === 'starred') btn.classList.add('star');
+          if (flag === 'important') btn.classList.add('alert');
+          btn.textContent = `${flagIcon(flag)} ${flagLabel(flag)}`;
+        });
       }
 
       function renderRecCard(item) {
@@ -1787,19 +1795,18 @@
             <span class="rec-card-meta">Cam 1 · ${item.size_mb} MB</span>
           </div>
           <div class="rec-expanded-body">
+            <div class="rec-expanded-head">
+              <input type="text" class="rec-name-input" placeholder="Add a name" />
+              <button type="button" class="flag-btn" data-role="flag">${flagIcon(meta.flag)} ${flagLabel(meta.flag)}</button>
+              <button type="button" class="rec-close-btn" title="Close">×</button>
+            </div>
             <video class="rec-expanded-video" controls preload="metadata" playsinline></video>
-            <div class="rec-expanded-info">
-              <div class="rec-expanded-head">
-                <input type="text" class="rec-name-input" placeholder="Add a name" />
-                <button type="button" class="rec-close-btn" title="Close">×</button>
-              </div>
-              <div class="rec-kv">
-                <div class="k">Type</div><div class="v">${kind === 'auto' ? 'Automatic' : 'Manual'}</div>
-                <div class="k">Camera</div><div class="v">Cam 1</div>
-                <div class="k">Captured</div><div class="v">${formatRecTimestamp(recTimestampMs(item))}</div>
-                <div class="k">Size</div><div class="v">${item.size_mb} MB</div>
-                <div class="k">File</div><div class="v">${item.name}</div>
-              </div>
+            <div class="rec-kv">
+              <div class="k">Type</div><div class="v">${kind === 'auto' ? 'Automatic' : 'Manual'}</div>
+              <div class="k">Camera</div><div class="v">Cam 1</div>
+              <div class="k">Captured</div><div class="v">${formatRecTimestamp(recTimestampMs(item))}</div>
+              <div class="k">Size</div><div class="v">${item.size_mb} MB</div>
+              <div class="k">File</div><div class="v">${item.name}</div>
             </div>
           </div>
         `;
@@ -1832,13 +1839,14 @@
           expandedBody.addEventListener("click", e => e.stopPropagation());
         }
 
-        const flagBtn = card.querySelector(".flag-btn");
-        flagBtn.addEventListener("click", function (e) {
-          e.stopPropagation();
-          const current = recMetaFor(item.name).flag || 'none';
-          const next = FLAG_CYCLE[(FLAG_CYCLE.indexOf(current) + 1) % FLAG_CYCLE.length];
-          updateRecMeta(item.name, { flag: next });
-          applyFlagVisual(card, next);
+        card.querySelectorAll(".flag-btn").forEach(btn => {
+          btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            const current = recMetaFor(item.name).flag || 'none';
+            const next = FLAG_CYCLE[(FLAG_CYCLE.indexOf(current) + 1) % FLAG_CYCLE.length];
+            updateRecMeta(item.name, { flag: next });
+            applyFlagVisual(card, next);
+          });
         });
 
         if (expandedRecName === item.name) {

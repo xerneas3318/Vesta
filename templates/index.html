@@ -1105,21 +1105,9 @@
             </div>
 
             <div style="margin-top:18px; display:flex; flex-direction:column; gap:14px;">
-              <div class="field">
-                <label for="live_rtsp_url">RTSP URL</label>
-                <input id="live_rtsp_url" type="text" value="{{ live_rtsp_default }}" />
-              </div>
-              <div class="field">
-                <label for="live_stream_select">Discovered streams</label>
-                <select id="live_stream_select">
-                  <option value="">Discovered streams will appear here</option>
-                </select>
-              </div>
+              <input id="live_rtsp_url" type="hidden" value="{{ live_rtsp_default }}" />
               <div class="btn-row">
-                <button id="live_start_btn" type="button" class="btn primary">Start Live</button>
-                <button id="live_stop_btn" type="button" class="btn">Stop Live</button>
-                <button id="live_discover_btn" type="button" class="btn">Discover Streams</button>
-                <button id="record_start_btn" type="button" class="btn">Start Recording</button>
+                <button id="record_start_btn" type="button" class="btn primary">Start Recording</button>
                 <button id="record_stop_btn" type="button" class="btn danger">Stop Recording</button>
               </div>
               <p id="live_status_text" class="note">Idle</p>
@@ -1482,7 +1470,7 @@
           }
           if (!recording && data.recording_file == null) refreshRecordedVideos();
           const streams = Array.isArray(data.discovered_streams) ? data.discovered_streams : [];
-          if (streams.length > 0) {
+          if (streams.length > 0 && liveStreamSelect) {
             const previous = liveStreamSelect.value;
             liveStreamSelect.innerHTML = "<option value=''>Discovered streams</option>";
             for (const streamUrl of streams) {
@@ -1496,44 +1484,54 @@
         } catch (_err) { /* ignore */ }
       }
 
-      liveStreamSelect.addEventListener("change", function () {
-        if (liveStreamSelect.value) rtspInput.value = liveStreamSelect.value;
-      });
+      if (liveStreamSelect) {
+        liveStreamSelect.addEventListener("change", function () {
+          if (liveStreamSelect.value) rtspInput.value = liveStreamSelect.value;
+        });
+      }
 
-      liveDiscoverBtn.addEventListener("click", async function () {
-        const data = await postJson("/live/discover", { rtsp_url: rtspInput.value.trim() });
-        if (data.error) { liveStatus.textContent = data.error; return; }
-        const streams = Array.isArray(data.streams) ? data.streams : [];
-        liveStreamSelect.innerHTML = "<option value=''>Discovered streams</option>";
-        for (const streamUrl of streams) {
-          const option = document.createElement("option");
-          option.value = streamUrl;
-          option.textContent = streamUrl;
-          liveStreamSelect.appendChild(option);
-        }
-        if (streams.length > 0) {
-          rtspInput.value = streams[0];
-          liveStreamSelect.value = streams[0];
-          liveStatus.textContent = `Found ${streams.length} stream(s).`;
-        } else {
-          liveStatus.textContent = "No streams discovered.";
-        }
-      });
+      if (liveDiscoverBtn) {
+        liveDiscoverBtn.addEventListener("click", async function () {
+          const data = await postJson("/live/discover", { rtsp_url: rtspInput.value.trim() });
+          if (data.error) { liveStatus.textContent = data.error; return; }
+          const streams = Array.isArray(data.streams) ? data.streams : [];
+          if (liveStreamSelect) {
+            liveStreamSelect.innerHTML = "<option value=''>Discovered streams</option>";
+            for (const streamUrl of streams) {
+              const option = document.createElement("option");
+              option.value = streamUrl;
+              option.textContent = streamUrl;
+              liveStreamSelect.appendChild(option);
+            }
+          }
+          if (streams.length > 0) {
+            rtspInput.value = streams[0];
+            if (liveStreamSelect) liveStreamSelect.value = streams[0];
+            liveStatus.textContent = `Found ${streams.length} stream(s).`;
+          } else {
+            liveStatus.textContent = "No streams discovered.";
+          }
+        });
+      }
 
       analysisSource.addEventListener("change", applySourceUi);
       applySourceUi();
 
-      liveStartBtn.addEventListener("click", async function () {
-        const data = await postJson("/live/start", { rtsp_url: rtspInput.value.trim() });
-        if (data.error) { liveStatus.textContent = data.error; return; }
-        liveFeedImg.src = "/live/feed?ts=" + Date.now();
-        refreshLiveStatus();
-      });
+      if (liveStartBtn) {
+        liveStartBtn.addEventListener("click", async function () {
+          const data = await postJson("/live/start", { rtsp_url: rtspInput.value.trim() });
+          if (data.error) { liveStatus.textContent = data.error; return; }
+          liveFeedImg.src = "/live/feed?ts=" + Date.now();
+          refreshLiveStatus();
+        });
+      }
 
-      liveStopBtn.addEventListener("click", async function () {
-        await postJson("/live/stop", {});
-        refreshLiveStatus();
-      });
+      if (liveStopBtn) {
+        liveStopBtn.addEventListener("click", async function () {
+          await postJson("/live/stop", {});
+          refreshLiveStatus();
+        });
+      }
 
       if (homeToggleLiveBtn) {
         homeToggleLiveBtn.addEventListener("click", async function () {

@@ -454,6 +454,16 @@
     }
     .rec-expanded-video { width: 100%; border-radius: 12px; background: #14110d; border: 1px solid var(--border); max-height: 480px; object-fit: contain; }
     .rec-expanded-info { display: flex; flex-direction: column; gap: 10px; }
+    .rec-expanded-head { display: flex; align-items: center; gap: 8px; }
+    .rec-expanded-head .rec-name-input { flex: 1; }
+    .rec-close-btn {
+      flex-shrink: 0; width: 32px; height: 32px;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface-sunk); color: var(--text-muted);
+      cursor: pointer; font-size: 18px; line-height: 1;
+      transition: border-color 0.15s ease, color 0.15s ease;
+    }
+    .rec-close-btn:hover { border-color: var(--accent); color: var(--accent); }
     .rec-name-input {
       width: 100%;
       padding: 10px 12px; border-radius: 10px;
@@ -1311,12 +1321,6 @@
             </div>
           </div>
 
-          <div class="card padded">
-            <div class="section-label"><span class="lhs">Recordings</span></div>
-            <video id="recording_player" controls preload="metadata" class="recording-player hidden"></video>
-            <div id="recording_empty" class="note" style="margin-top:8px;">No recordings yet.</div>
-            <ul id="recording_list" class="recording-list"></ul>
-          </div>
         </section>
 
         <!-- ====================== RECORDINGS SCREEN ====================== -->
@@ -1620,9 +1624,6 @@
       const liveStopBtn = document.getElementById("live_stop_btn");
       const recordStartBtn = document.getElementById("record_start_btn");
       const recordStopBtn = document.getElementById("record_stop_btn");
-      const recordingPlayer = document.getElementById("recording_player");
-      const recordingList = document.getElementById("recording_list");
-      const recordingEmpty = document.getElementById("recording_empty");
       const overlayLabel = document.getElementById("live_overlay_label");
       const overlayDot = document.getElementById("live_overlay_dot");
       const overlayCode = document.getElementById("live_overlay_code");
@@ -1650,8 +1651,10 @@
       const REC_META_KEY = 'recordings-meta';
       const FLAG_CYCLE = ['none', 'starred', 'important'];
       let recordingsCache = [];
+      let recordingsCacheKey = '';
       let recSearchOrder = null;
       let recSearchStatus = '';
+      let expandedRecName = null;
 
       function loadRecMeta() {
         try {
@@ -1741,38 +1744,55 @@
         return filtered;
       }
 
+      function applyFlagVisual(card, flag) {
+        card.classList.remove('flag-starred', 'flag-important');
+        if (flag === 'starred') card.classList.add('flag-starred');
+        if (flag === 'important') card.classList.add('flag-important');
+        const pillsHost = card.querySelector(".rec-thumb-flags");
+        if (pillsHost) {
+          pillsHost.innerHTML = flag === 'starred'
+            ? '<span class="flag-pill star">★</span>'
+            : flag === 'important' ? '<span class="flag-pill alert">!</span>' : '';
+        }
+        const flagBtn = card.querySelector(".flag-btn");
+        if (flagBtn) {
+          flagBtn.classList.remove('star', 'alert');
+          if (flag === 'starred') flagBtn.classList.add('star');
+          if (flag === 'important') flagBtn.classList.add('alert');
+          flagBtn.textContent = `${flagIcon(flag)} ${flagLabel(flag)}`;
+        }
+      }
+
       function renderRecCard(item) {
         const meta = recMetaFor(item.name);
         const kind = recKind(item.name);
         const card = document.createElement("article");
         card.className = "rec-card";
-        if (meta.flag === 'starred') card.classList.add('flag-starred');
-        if (meta.flag === 'important') card.classList.add('flag-important');
         card.dataset.name = item.name;
 
         const displayName = meta.custom_name || item.name;
-        const flagPills = meta.flag === 'starred'
-          ? '<span class="flag-pill star">★</span>'
-          : meta.flag === 'important' ? '<span class="flag-pill alert">!</span>' : '';
 
         card.innerHTML = `
           <div class="rec-thumb">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.6"/><path d="M10 9.5v5l5-2.5-5-2.5z" fill="currentColor"/></svg>
             <span class="rec-thumb-type ${kind}">${kind === 'auto' ? 'Auto' : 'Manual'}</span>
-            <span class="rec-thumb-flags">${flagPills}</span>
+            <span class="rec-thumb-flags"></span>
           </div>
           <div class="rec-card-body">
             <div class="rec-card-title"></div>
             <div class="rec-card-meta"></div>
           </div>
           <div class="rec-card-actions">
-            <button type="button" class="flag-btn ${meta.flag === 'none' ? '' : meta.flag}">${flagIcon(meta.flag)} ${flagLabel(meta.flag)}</button>
+            <button type="button" class="flag-btn">${flagIcon(meta.flag)} ${flagLabel(meta.flag)}</button>
             <span class="rec-card-meta">Cam 1 · ${item.size_mb} MB</span>
           </div>
           <div class="rec-expanded-body">
-            <video class="rec-expanded-video" controls preload="metadata"></video>
+            <video class="rec-expanded-video" controls preload="metadata" playsinline></video>
             <div class="rec-expanded-info">
-              <input type="text" class="rec-name-input" placeholder="Add a name" />
+              <div class="rec-expanded-head">
+                <input type="text" class="rec-name-input" placeholder="Add a name" />
+                <button type="button" class="rec-close-btn" title="Close">×</button>
+              </div>
               <div class="rec-kv">
                 <div class="k">Type</div><div class="v">${kind === 'auto' ? 'Automatic' : 'Manual'}</div>
                 <div class="k">Camera</div><div class="v">Cam 1</div>
@@ -1785,12 +1805,13 @@
         `;
         card.querySelector(".rec-card-title").textContent = displayName;
         card.querySelector(".rec-card-meta").textContent = formatRecTimestamp(recTimestampMs(item));
+        applyFlagVisual(card, meta.flag);
+
         const nameInput = card.querySelector(".rec-name-input");
         nameInput.value = meta.custom_name || "";
 
         const thumb = card.querySelector(".rec-thumb");
-        thumb.addEventListener("click", function () { toggleRecExpanded(card, item); });
-        card.querySelector(".rec-card-body").addEventListener("click", function () { toggleRecExpanded(card, item); });
+        thumb.addEventListener("click", function () { openRecExpanded(card, item); });
 
         nameInput.addEventListener("click", e => e.stopPropagation());
         nameInput.addEventListener("input", function () {
@@ -1798,33 +1819,59 @@
           card.querySelector(".rec-card-title").textContent = nameInput.value || item.name;
         });
 
+        const closeBtn = card.querySelector(".rec-close-btn");
+        if (closeBtn) {
+          closeBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            closeRecExpanded(card);
+          });
+        }
+
+        const expandedBody = card.querySelector(".rec-expanded-body");
+        if (expandedBody) {
+          expandedBody.addEventListener("click", e => e.stopPropagation());
+        }
+
         const flagBtn = card.querySelector(".flag-btn");
         flagBtn.addEventListener("click", function (e) {
           e.stopPropagation();
           const current = recMetaFor(item.name).flag || 'none';
           const next = FLAG_CYCLE[(FLAG_CYCLE.indexOf(current) + 1) % FLAG_CYCLE.length];
           updateRecMeta(item.name, { flag: next });
-          renderRecGrid();
+          applyFlagVisual(card, next);
         });
+
+        if (expandedRecName === item.name) {
+          card.classList.add("expanded");
+          const video = card.querySelector("video");
+          if (video) video.src = item.url || `/files/recordings/${encodeURIComponent(item.name)}`;
+        }
 
         return card;
       }
 
-      function toggleRecExpanded(card, item) {
-        const wasExpanded = card.classList.contains("expanded");
+      function openRecExpanded(card, item) {
+        if (card.classList.contains("expanded")) return;
         document.querySelectorAll(".rec-card.expanded").forEach(el => {
+          if (el === card) return;
           el.classList.remove("expanded");
           const v = el.querySelector("video");
           if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
         });
-        if (!wasExpanded) {
-          card.classList.add("expanded");
-          const video = card.querySelector("video");
-          if (video) {
-            video.src = item.url || `/files/recordings/${encodeURIComponent(item.name)}`;
-            video.play().catch(() => {});
-          }
+        card.classList.add("expanded");
+        expandedRecName = item.name;
+        const video = card.querySelector("video");
+        if (video) {
+          video.src = item.url || `/files/recordings/${encodeURIComponent(item.name)}`;
+          video.play().catch(() => {});
         }
+      }
+
+      function closeRecExpanded(card) {
+        card.classList.remove("expanded");
+        const v = card.querySelector("video");
+        if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+        expandedRecName = null;
       }
 
       function renderRecGrid() {
@@ -1904,13 +1951,16 @@
         });
       }
 
+      function recordingsKeyFor(items) {
+        return items.map(it => `${it.name}|${it.size_mb}|${it.created_at_ms || 0}`).join(';');
+      }
+
       async function refreshRecordedVideos(preferredName) {
         try {
           const resp = await fetch("/recordings/list", { cache: "no-store" });
           if (!resp.ok) return;
           const data = await resp.json();
           const items = Array.isArray(data.recorded_videos) ? data.recorded_videos : [];
-          recordingsCache = items;
           const previous = preferredName || recordedSelect.value;
           recordedSelect.innerHTML = "<option value=''>Select recorded video</option>";
           for (const item of items) {
@@ -1922,31 +1972,12 @@
           if (previous) recordedSelect.value = previous;
           if (statRecordings) statRecordings.textContent = String(items.length);
 
-          if (recordingList) {
-            const currentSrc = recordingPlayer && recordingPlayer.dataset.name ? recordingPlayer.dataset.name : null;
-            recordingList.innerHTML = "";
-            for (const item of items) {
-              const li = document.createElement("li");
-              li.className = "recording-item";
-              if (currentSrc && currentSrc === item.name) li.classList.add("active");
-              li.innerHTML = `<span class="rec-name"></span><span class="rec-meta"></span>`;
-              li.querySelector(".rec-name").textContent = item.name;
-              li.querySelector(".rec-meta").textContent = `${item.size_mb} MB`;
-              li.addEventListener("click", function () {
-                if (!recordingPlayer) return;
-                recordingPlayer.src = item.url || `/files/recordings/${encodeURIComponent(item.name)}`;
-                recordingPlayer.dataset.name = item.name;
-                recordingPlayer.classList.remove("hidden");
-                recordingPlayer.play().catch(() => {});
-                document.querySelectorAll(".recording-item.active").forEach(el => el.classList.remove("active"));
-                li.classList.add("active");
-              });
-              recordingList.appendChild(li);
-            }
-            if (recordingEmpty) recordingEmpty.style.display = items.length === 0 ? "" : "none";
+          const key = recordingsKeyFor(items);
+          if (key !== recordingsCacheKey) {
+            recordingsCache = items;
+            recordingsCacheKey = key;
+            renderRecGrid();
           }
-
-          renderRecGrid();
         } catch (_err) { /* ignore */ }
       }
 

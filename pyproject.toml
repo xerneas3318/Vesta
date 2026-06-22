@@ -1,7 +1,7 @@
 [project]
-name = "surveillance-unified"
+name = "vesta"
 version = "0.1.0"
-description = "Unified Flask UI for person detection and temporal-mosaic video understanding"
+description = "Vesta — self-hosted, privacy-first surveillance assistant for schools (local YOLO + local LLM)"
 requires-python = ">=3.12"
 dependencies = [
     "flask>=3.1.0",

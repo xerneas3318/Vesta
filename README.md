@@ -86,17 +86,44 @@ release.
 
 ## Getting started
 
-See [**INSTALL.md**](INSTALL.md) for the full install + startup guide, including
-how to bring up a local llama.cpp server with a vision model.
+Vesta has two components that need to be running side by side:
 
-Short version:
+1. **The local LLM backend** ([llama.cpp](https://github.com/ggml-org/llama.cpp))
+   that does the vision captioning and summarization.
+2. **The Vesta web app**, which does YOLO person detection and talks to the LLM
+   over HTTP.
+
+### 1. Bring up the local LLM server
+
+Build llama.cpp (see [their build docs](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md))
+and download a vision-capable GGUF plus its matching `mmproj` projector file.
+Known-good models: **Qwen2-VL 7B Instruct** or **LLaVA 1.6 Mistral 7B**.
+
+Start the server on port `8078` (the default Vesta expects):
+
+```bash
+./build/bin/llama-server \
+  --host 127.0.0.1 --port 8078 \
+  -m   ~/models/Qwen2-VL-7B-Instruct-Q4_K_M.gguf \
+  --mmproj ~/models/mmproj-Qwen2-VL-7B-Instruct-f16.gguf \
+  -c 8192 \
+  --n-gpu-layers 99   # drop this flag for CPU-only
+```
+
+Sanity check: `curl http://127.0.0.1:8078/v1/models` should return JSON.
+
+Override the URL with `LLAMACPP_BASE_URL` if you run the server elsewhere.
+
+### 2. Start Vesta
 
 ```bash
 uv sync
-# in a second terminal: start your local llama.cpp server (see INSTALL.md)
 ./run.sh
 # open http://127.0.0.1:33263
 ```
+
+Full step-by-step (system packages, YOLO weights, systemd units, troubleshooting):
+see [**INSTALL.md**](INSTALL.md).
 
 ## Project layout
 

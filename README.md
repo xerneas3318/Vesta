@@ -1,91 +1,103 @@
-# Surveillance Unified UI
+# Vesta
 
-Unified Flask app for two video tasks in one flow:
+**Vesta** is a self-hosted, privacy-first surveillance assistant built for schools.
+It pairs on-device person detection with a local large-language-model that describes
+what is actually happening on camera — without ever sending video, frames, or
+captions to a third-party cloud.
 
-- Person detection with YOLO (GPU-first, with optional CPU fallback)
-- Temporal-mosaic video understanding via a llama.cpp OpenAI-compatible endpoint
+Vesta was developed for **Stratford Schools / Spring Education Group** as a tool
+to help staff investigate and counter on-campus theft. Footage and analysis stay
+on hardware the school controls.
 
-Upload one video, then the app:
+> Named for Vesta, Roman goddess of hearth and home — a quiet guardian.
 
-1. Detects person-containing time segments and exports annotated clips.
-2. Builds person-only temporal mosaics.
-3. Generates per-mosaic captions and a final video-level summary.
+---
 
-## Features
+## Why Vesta
 
-- Single web UI with upload + dual-stage progress bars.
-- Person clip extraction with timestamps and cached outputs.
-- Dynamic number of mosaics based on detected person-frame density.
-- Async analysis job endpoints (`/analyze/start`, `/analyze/status/<job_id>`, `/analyze/result/<job_id>`).
+Most "AI camera" products ship footage to a vendor's cloud for analysis. For a
+school that is unacceptable:
 
-## Project Structure
+- Student and staff video is sensitive data.
+- Network egress of raw footage is expensive and slow.
+- Vendor lock-in makes evidence harder to retrieve when something goes wrong.
 
-- `main.py`: unified Flask app.
-- `templates/index.html`: web UI.
-- `runtime/uploads`, `runtime/outputs`, `runtime/cache`: runtime artifacts.
-- `person-detect/`: YOLO assets (`yolo26s.pt` / `yolo26s.onnx`) and related scripts.
-- `video-understanding/`: earlier standalone experiments.
+Vesta is built around the opposite trade-off:
 
-## Prerequisites
+- **Local-first.** Everything — detection, captioning, summarization — runs on a
+  machine you own.
+- **Localhost-able.** The entire stack can run on a single workstation behind the
+  school firewall and be reached at `http://127.0.0.1:33263`.
+- **Auditable.** Inputs, outputs, and cached artifacts live on disk in plain
+  files you can inspect, archive, or delete.
+- **Built for an actual problem.** Designed with the loss-prevention workflow of
+  Stratford Schools in mind: upload a clip from a hallway or stockroom camera,
+  get back the time ranges that contain people plus a short written description
+  of what each person is doing.
 
-- Python 3.12+
-- [`uv`](https://docs.astral.sh/uv/)
-- `ffmpeg` + `ffprobe` available on `PATH`
-- CUDA GPU recommended (default mode requires GPU)
-- Running llama.cpp-compatible server exposing `POST /v1/chat/completions`
+## What it does
 
-## Install
+Upload one video, and Vesta:
+
+1. **Detects** people frame-by-frame with YOLO (GPU when available, CPU
+   fallback supported).
+2. **Extracts** annotated per-person clips with timestamps.
+3. **Builds** temporal mosaics — grids of person-only frames sampled across each
+   clip — so a vision-language model can reason over motion in a single image.
+4. **Captions** each mosaic and **summarizes** the whole video using a local
+   llama.cpp server speaking the OpenAI `chat/completions` protocol.
+5. **Serves** all of this through a single Flask web UI with dual-stage progress
+   bars and replayable cached outputs.
+
+## Architecture at a glance
+
+```
+       browser  ──►  Flask UI  ──►  YOLO  (person detection, GPU/CPU)
+                          │
+                          └──►  llama.cpp server  (vision-LLM captions + summary)
+                          │
+                          └──►  runtime/  (uploads, clips, mosaics, cache)
+```
+
+Two processes on one host. No outbound network calls are required at inference
+time.
+
+## Status
+
+`v0.1.0` — first usable release. Single-user web UI, async job endpoints, and
+documented install path. Multi-camera ingest and live RTSP are tracked on
+feature branches (`feature-rtsp-stream`, `ui-polish`) and are not part of this
+release.
+
+## Getting started
+
+See [**INSTALL.md**](INSTALL.md) for the full install + startup guide, including
+how to bring up a local llama.cpp server with a vision model.
+
+Short version:
 
 ```bash
 uv sync
-```
-
-## Run
-
-```bash
+# in a second terminal: start your local llama.cpp server (see INSTALL.md)
 ./run.sh
+# open http://127.0.0.1:33263
 ```
 
-Default URL:
+## Project layout
 
-- http://127.0.0.1:33263
+- `main.py` — unified Flask app, job runner, YOLO + LLM glue.
+- `templates/index.html` — single-page web UI.
+- `person-detect/` — YOLO assets (`yolo26s.onnx`, optional `yolo26s.pt`) and the
+  earlier standalone detection demo.
+- `video-understanding/` — earlier mosaic-captioning experiments.
+- `runtime/` — created on first run; holds `uploads/`, `outputs/`, and `cache/`.
 
-Equivalent command:
+## License & use
 
-```bash
-uv run flask --app main:app run --host 0.0.0.0 --port 33263
-```
+Vesta is an internal tool developed for Stratford Schools / Spring Education
+Group. Use outside that context is at your own discretion; review the code
+before deploying it anywhere that handles minors' video.
 
-## Environment Variables
+---
 
-- `LLAMACPP_BASE_URL` (default: `http://127.0.0.1:8078`)
-- `LLAMACPP_MODEL` (default: `local-model`)
-- `REQUIRE_GPU` (default: `1`)
-  - `1`/`true`: fail if CUDA is unavailable
-  - `0`/`false`: allow CPU fallback
-- `VIDEO_BATCH_SIZE` (default: `32`)
-- `MAX_DYNAMIC_MOSAICS` (default: `24`)
-- `MOSAIC_SCALE_DIVISOR` (default: `8`)
-
-Example (allow CPU fallback):
-
-```bash
-REQUIRE_GPU=0 ./run.sh
-```
-
-## Output Artifacts
-
-- Source uploads copied to `runtime/outputs/` for playback.
-- Person clips cached under `runtime/cache/video_clips/<cache_key>/`.
-- Clip metadata stored as `manifest.json` in each cache directory.
-- Files are served via `/files/<path>` from the `runtime/` directory.
-
-## Notes
-
-- Supported video types: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`.
-- Person class filtering is automatic based on model label names.
-- If both detection and understanding fail, UI reports a combined failure.
-
-## Related Docs
-
-- `person-detect/README.md` for the standalone person-detection demo.
+Maintained by [@xerneas3318](https://github.com/xerneas3318).

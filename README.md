@@ -49,6 +49,24 @@ Upload one video, and Vesta:
 5. **Serves** all of this through a single Flask web UI with dual-stage progress
    bars and replayable cached outputs.
 
+## Screenshots
+
+**Watch dashboard** — the day-to-day landing page. Active event banner up top, the camera you're watching front-and-center, and the most recent auto-saved clips on the right.
+
+![Watch dashboard](screenshots/01-watch-dashboard.png)
+
+**Live view** — a single camera feed with one-click start/stop recording. Useful when staff want to keep an eye on a specific area in real time.
+
+![Live camera view](screenshots/02-live-camera.png)
+
+**Recordings library with AI search** — every clip is auto-captioned by the local vision-LLM, so you can search by *what happened* ("two people walking past utility cabinets") instead of by filename or timestamp. The right rail is a calendar/timeline of clip density.
+
+![Recordings library with AI captions](screenshots/03-recordings-grid.png)
+
+**Clip detail** — quick metadata pane for a single recording: camera, timestamp, duration, file size, plus a star/rename for easier recall later.
+
+![Recording detail](screenshots/04-recording-detail.png)
+
 ## Architecture at a glance
 
 ```

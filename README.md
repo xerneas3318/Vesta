@@ -1,7 +1,5 @@
 # Vesta
 
-<div align="center">
-
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.x-000000?style=flat-square&logo=flask)](https://flask.palletsprojects.com/)
 [![YOLO](https://img.shields.io/badge/Detection-YOLO%20(Ultralytics)-00AEEF?style=flat-square)](https://github.com/ultralytics/ultralytics)
@@ -14,8 +12,6 @@
 **Self-hosted, privacy-first surveillance assistant for schools.** On-device YOLO person
 detection paired with a local vision-LLM that describes what is actually happening on
 camera, without ever sending video, frames, or captions to a third-party cloud.
-
-</div>
 
 Vesta was developed for **Stratford Schools / Spring Education Group** as a tool to help
 staff investigate and counter on-campus theft. Footage and analysis stay on hardware the

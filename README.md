@@ -5,7 +5,7 @@
 [![YOLO](https://img.shields.io/badge/Detection-YOLO%20(Ultralytics)-00AEEF?style=flat-square)](https://github.com/ultralytics/ultralytics)
 [![llama.cpp](https://img.shields.io/badge/Vision--LLM-llama.cpp-5A4FCF?style=flat-square)](https://github.com/ggml-org/llama.cpp)
 [![Local-first](https://img.shields.io/badge/Inference-100%25%20local-2e7d32?style=flat-square)](#why-vesta)
-[![Status](https://img.shields.io/badge/Release-v0.1.0-b23b34?style=flat-square)](#status)
+[![License: PolyForm NC](https://img.shields.io/badge/License-PolyForm%20Noncommercial-yellow.svg?style=flat-square)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
 
 <img src="screenshots/01-watch-dashboard.png" width="820" alt="Vesta watch dashboard: active-event banner, the camera under watch, and recent auto-saved clips" />
 
@@ -189,9 +189,12 @@ path. Live RTSP and UI polish that have not landed on `main` are tracked on the
 
 ## License & use
 
-Vesta is an internal tool developed for Stratford Schools / Spring Education Group. Use
-outside that context is at your own discretion; review the code before deploying it anywhere
-that handles minors' video.
+Vesta is released under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/):
+you may use, modify, and share it for any **noncommercial** purpose, but commercial use is
+not permitted.
+
+It was developed as an internal tool for Stratford Schools / Spring Education Group. Review
+the code before deploying it anywhere that handles minors' video.
 
 ---
 
